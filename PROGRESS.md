@@ -88,3 +88,6 @@ deviation here with a reason.
 - **Phase 0 dependency audit is report-only** (`|| true`); flipped to blocking in Phase 7 (Spec §10.7), alongside SHA-pinning GitHub Actions.
 - **GitHub Actions pinned to major tags** in Phase 0; SHA-pinning deferred to Phase 7 hardening.
 - **Prisma client default output** (`node_modules/.prisma/client`) so imports use the standard `@prisma/client` path.
+- **Phase 0 commit:** `071379d` (`chore: scaffold Phase 0 foundation`). Initial commit on `main` (greenfield baseline); later phases use branches/PRs per the CI model.
+- **Local dev env:** root `.env` is the canonical source of truth (gitignored); Prisma scripts load it via `dotenv-cli` (`dotenv -e ../../.env`), which tolerates a missing file so CI works off job-level env instead.
+- **Git note:** the user's global `~/.gitconfig` has a malformed empty `gpg.format` that aborts `git commit`/`git log`. Worked around with `GIT_CONFIG_GLOBAL=/dev/null` + explicit identity; their global config was left untouched.
