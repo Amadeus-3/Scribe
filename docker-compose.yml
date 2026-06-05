@@ -1,0 +1,44 @@
+# Local development infrastructure (Decision §18.6: self-hosted).
+# Phase 0 provisions Postgres + the Inngest dev server. The Next app and the
+# worker run on the host via `pnpm dev` during development. Containerizing the
+# app + worker for production self-hosting is wired in Phase 8.
+#
+#   docker compose up -d
+#   cp .env.example .env   # then fill in secrets
+#   pnpm install && pnpm db:migrate
+#
+services:
+  postgres:
+    image: postgres:15
+    container_name: scribe-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scribe
+      POSTGRES_PASSWORD: scribe
+      POSTGRES_DB: scribe
+    ports:
+      - '5432:5432'
+    volumes:
+      - scribe_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U scribe -d scribe']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  inngest:
+    image: inngest/inngest:latest
+    container_name: scribe-inngest
+    restart: unless-stopped
+    # The dev server discovers the worker's Inngest endpoint to sync functions.
+    command: ['inngest', 'dev', '-u', 'http://host.docker.internal:3100/api/inngest']
+    ports:
+      - '8288:8288'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  scribe_pgdata:

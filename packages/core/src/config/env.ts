@@ -1,0 +1,96 @@
+import { z } from 'zod';
+
+/**
+ * Environment configuration schema (Spec §12).
+ *
+ * Boot must fail fast when a required variable is missing or malformed. Parsing
+ * is exposed as a pure `loadEnv(raw)` for testability and as a lazy `getEnv()`
+ * singleton for runtime use, so importing this module never throws at build
+ * time (e.g. during `next build`).
+ */
+
+/** A base64-encoded value that decodes to exactly `len` bytes. */
+const base64Bytes = (len: number) =>
+  z.string().refine(
+    (value) => {
+      try {
+        return Buffer.from(value, 'base64').length === len;
+      } catch {
+        return false;
+      }
+    },
+    { message: `must decode to ${len} bytes from base64` },
+  );
+
+/** A URL string, or an explicitly empty string for optional endpoints. */
+const urlOrEmpty = z.union([z.string().url(), z.literal('')]);
+
+export const EnvSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  APP_BASE_URL: z.string().url(),
+
+  // Database (Postgres). Pooled for runtime, direct for migrations.
+  DATABASE_URL: z.string().min(1),
+  DIRECT_URL: z.string().min(1),
+
+  // Anthropic / Claude
+  ANTHROPIC_API_KEY: z.string().min(1),
+
+  // Inngest — optional in dev (the local dev server supplies defaults).
+  INNGEST_EVENT_KEY: z.string().min(1).optional(),
+  INNGEST_SIGNING_KEY: z.string().min(1).optional(),
+
+  // Auth.js (NextAuth v5) — email magic link + allowlist (Decision §18.4).
+  AUTH_SECRET: z.string().min(16, 'must be at least 16 characters'),
+  EMAIL_SERVER: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(1).optional(),
+  ALLOWED_SIGNIN_EMAILS: z.string().default(''),
+
+  // AES-256-GCM key for per-site CMS credentials (Spec §10.3). 32 bytes.
+  ENCRYPTION_KEY: base64Bytes(32),
+
+  // Observability (optional)
+  SENTRY_DSN: urlOrEmpty.optional(),
+  ALERT_WEBHOOK_URL: urlOrEmpty.optional(),
+
+  // Keyword sourcing — unused in v1 (manual seed only, Decision §18.1).
+  KEYWORD_API_KEY: z.string().optional(),
+});
+
+export type Env = z.infer<typeof EnvSchema>;
+
+/** Parse and validate an environment record. Throws a readable error on failure. */
+export function loadEnv(raw: NodeJS.ProcessEnv = process.env): Env {
+  const parsed = EnvSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((issue) => `  - ${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  return parsed.data;
+}
+
+let cached: Env | undefined;
+
+/** Lazily-validated environment singleton. Safe to call from any server module. */
+export function getEnv(): Env {
+  if (cached === undefined) {
+    cached = loadEnv();
+  }
+  return cached;
+}
+
+/** Comma-separated allowlist parsed into a normalized lowercase set. */
+export function getSigninAllowlist(env: Env = getEnv()): Set<string> {
+  return new Set(
+    env.ALLOWED_SIGNIN_EMAILS.split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => entry.length > 0),
+  );
+}
+
+/** Test-only: reset the cached env so a fresh `getEnv()` re-parses. */
+export function resetEnvCacheForTests(): void {
+  cached = undefined;
+}
