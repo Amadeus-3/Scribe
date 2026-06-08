@@ -1,0 +1,22 @@
+# Keep the build context small and avoid copying host-platform binaries
+# (macOS node_modules would break the Linux container). Deps are installed
+# fresh inside the image.
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+.git
+.github
+**/*.log
+
+# Secrets and local env never go into the image (compose injects env at runtime).
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+.vscode
+.idea

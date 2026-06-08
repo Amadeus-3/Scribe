@@ -36,9 +36,10 @@ docker-compose.yml   local Postgres + Inngest dev server
 | Task | Command |
 |---|---|
 | Install | `pnpm install` |
-| Local infra | `docker compose up -d` (Postgres :5432, Inngest :8288) |
+| Full stack in Docker | `docker compose up -d --build` (Postgres :5432, Inngest :8288, web :3000, worker :3100; runs migrations first) |
+| Infra only | `docker compose up -d postgres inngest` |
 | Migrate (dev) | `pnpm db:migrate` · Generate client: `pnpm db:generate` · Deploy: `pnpm db:deploy` |
-| Dev | `pnpm dev` (turbo; web :3000, worker :3100) |
+| Dev (host, fast hot-reload) | `pnpm dev` (turbo; web :3000, worker :3100) — needs infra up |
 | Lint / Types / Test / Build | `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build` |
 | E2E | `pnpm --filter @scribe/web e2e` |
 
