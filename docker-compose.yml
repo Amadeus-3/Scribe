@@ -1,12 +1,13 @@
-# Local development infrastructure (Decision §18.6: self-hosted).
-# Phase 0 provisions Postgres + the Inngest dev server. The Next app and the
-# worker run on the host via `pnpm dev` during development. Containerizing the
-# app + worker for production self-hosting is wired in Phase 8.
+# Full self-hosted stack (Decision §18.6). One command runs everything:
 #
-#   docker compose up -d
-#   cp .env.example .env   # then fill in secrets
-#   pnpm install && pnpm db:migrate
+#   cp .env.example .env   # fill in secrets first
+#   docker compose up -d --build
 #
+# Services: Postgres, Inngest dev server, a one-shot migrate, the web dashboard
+# (:3000), and the worker (:3100). web + worker build from the root Dockerfile.
+#
+# NOTE: during active feature development, `pnpm dev` on the host gives faster
+# hot-reload (see the /scribe skill). This stack is the run/deploy path.
 services:
   postgres:
     image: postgres:15
@@ -26,19 +27,78 @@ services:
       timeout: 5s
       retries: 5
 
+  # The web service owns the single image build (scribe-app); worker + migrate
+  # reuse that image. Only one service may carry `build:` for a shared image,
+  # otherwise the parallel builder races on the same tag.
+  web:
+    build:
+      context: .
+      target: runtime
+    image: scribe-app
+    container_name: scribe-web
+    command: ['pnpm', '--filter', '@scribe/web', 'start']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      APP_BASE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
+      DIRECT_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
+      # Use the local Inngest dev server (no signing keys); not Inngest Cloud.
+      INNGEST_DEV: http://inngest:8288
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Applies committed migrations to a fresh/updated DB, then exits (one-shot).
+  # Reuses the scribe-app image built by `web`; no build section of its own.
+  migrate:
+    image: scribe-app
+    command: ['pnpm', 'db:deploy']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
+      DIRECT_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  worker:
+    image: scribe-app
+    container_name: scribe-worker
+    command: ['pnpm', '--filter', '@scribe/worker', 'start']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      WORKER_PORT: 3100
+      DATABASE_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
+      DIRECT_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
+      # Serve in Inngest dev mode against the local dev server (no signing keys).
+      INNGEST_DEV: http://inngest:8288
+    ports:
+      - '3100:3100'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   inngest:
     image: inngest/inngest:latest
     container_name: scribe-inngest
     restart: unless-stopped
-    # The dev server discovers the worker's Inngest endpoint to sync functions.
-    command: ['inngest', 'dev', '-u', 'http://host.docker.internal:3100/api/inngest']
+    # Discovers the worker's Inngest endpoint over the compose network.
+    command: ['inngest', 'dev', '-u', 'http://worker:3100/api/inngest']
     ports:
       - '8288:8288'
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
     depends_on:
-      postgres:
-        condition: service_healthy
+      - worker
 
 volumes:
   scribe_pgdata:

@@ -41,8 +41,24 @@ pnpm db:generate
 
 ## Run the app
 
+Two ways. **Full Docker** (everything in containers, one command — the run/deploy path):
+
 ```bash
-pnpm dev    # turbo: web on :3000, worker on :3100 (persistent)
+cp .env.example .env        # fill in secrets first (see setup above)
+docker compose up -d --build
+# Brings up: postgres, inngest (:8288), migrate (one-shot), web (:3000), worker (:3100).
+# The root Dockerfile builds one image (scribe-app) shared by web + worker.
+# Rebuild after code changes: docker compose up -d --build
+docker compose ps          # all services
+docker compose logs -f web worker
+docker compose down        # stop (add -v to wipe the DB volume)
+```
+
+**Host dev** (faster hot-reload while building features):
+
+```bash
+docker compose up -d postgres inngest   # infra only
+pnpm dev                                 # turbo: web :3000, worker :3100 (persistent)
 ```
 
 Or individually:
@@ -141,3 +157,10 @@ a stage, update this section with the concrete command + file path.
   at the job level instead of a file.
 - **CI** mirrors the quality gate exactly: install (frozen lockfile) → db:generate
   → db:deploy → lint → typecheck → test → build, with a Postgres service.
+- **Docker (full stack):** one shared image `scribe-app` (root `Dockerfile`); only
+  the `web` service carries `build:` — worker + migrate reuse the image (two
+  services building the same tag race with "already exists"). web/worker run
+  `NODE_ENV=production` but set `INNGEST_DEV=http://inngest:8288` so the Inngest
+  SDK uses the local dev server (no signing keys); without it the worker 401s
+  with "No signing key found". `migrate` is a one-shot `pnpm db:deploy` that
+  web/worker `depend_on` via `service_completed_successfully`.
