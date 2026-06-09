@@ -9,6 +9,10 @@
 // Configuration
 export * from './config/env';
 
+// Security primitives
+export * from './crypto/encryption';
+export * from './auth/authorize';
+
 // Observability
 export * from './observability/logger';
 
