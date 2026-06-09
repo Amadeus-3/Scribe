@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
+    // Integration tests need a live DB; they run via the integration config.
+    exclude: ['src/**/*.integration.test.ts', 'node_modules/**'],
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage',
