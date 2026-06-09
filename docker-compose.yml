@@ -41,6 +41,8 @@ services:
     environment:
       NODE_ENV: production
       APP_BASE_URL: http://localhost:3000
+      # Self-hosted behind localhost/proxy: trust the incoming host (Auth.js).
+      AUTH_TRUST_HOST: 'true'
       DATABASE_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
       DIRECT_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
       # Use the local Inngest dev server (no signing keys); not Inngest Cloud.
