@@ -23,6 +23,12 @@ export * from './domain/style-guide';
 export * from './domain/site';
 export * from './domain/keyword';
 
+// Services (authorize + Zod + audit-in-transaction)
+export * from './services/site-service';
+export * from './services/style-guide-service';
+export * from './services/keyword-service';
+export * from './services/settings-service';
+
 // Database access + generated Prisma types and enums
 export type { Db } from './db/types';
 export * from './db/client';
