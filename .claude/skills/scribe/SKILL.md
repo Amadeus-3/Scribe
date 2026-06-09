@@ -155,6 +155,12 @@ a stage, update this section with the concrete command + file path.
   the Sentry build plugin's injected import is otherwise unresolvable.
 - **`dotenv-cli`** tolerates a missing `.env`; CI relies on this and supplies env
   at the job level instead of a file.
+- **Auth.js**: self-hosted needs `AUTH_TRUST_HOST=true` (also `trustHost: true` in
+  `auth.config.ts`) or it throws `UntrustedHost`. Sign-in is allowlisted via
+  `ALLOWED_SIGNIN_EMAILS` (checked at link-request time); local magic links land
+  in Mailpit (http://localhost:8025). The first user to sign in becomes ADMIN.
+- **Integration tests** (`pnpm --filter @scribe/core test:integration`) auto-create
+  + migrate a `<db>_test` database; needs Postgres up and DATABASE_URL set.
 - **CI** mirrors the quality gate exactly: install (frozen lockfile) → db:generate
   → db:deploy → lint → typecheck → test → build, with a Postgres service.
 - **Docker (full stack):** one shared image `scribe-app` (root `Dockerfile`); only

@@ -22,12 +22,14 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] **Acceptance:** `pnpm install && pnpm build` succeeds; migration `20260605163354_init` applies to a fresh DB; env validation fails fast on missing required var (test-covered); lint/typecheck/test green
 - [x] Commit Phase 0 — see Decisions Log for commit hash
 
-## Phase 1 — Auth, RBAC, core CRUD  ·  status: pending
-- [ ] Auth.js email magic link + allowlist; `authorize()` helper; RBAC ADMIN/EDITOR/VIEWER
-- [ ] Dashboard shell + nav; Sites CRUD w/ AES-256-GCM credential storage (write-only UI)
-- [ ] StyleGuide editor; Keywords seed-list add; Settings page (Admin)
-- [ ] AuditLog on every mutation
-- [ ] Acceptance: per-role access matrix (integration tests); creds round-trip + never returned to client; every mutation audited
+## Phase 1 — Auth, RBAC, core CRUD  ·  status: complete
+- [x] Auth.js email magic link + allowlist; `authorize()` helper; RBAC ADMIN/EDITOR/VIEWER (first user → ADMIN)
+- [x] Dashboard shell + nav (dense dark admin); Sites CRUD w/ AES-256-GCM credential storage (write-only UI)
+- [x] StyleGuide editor; Keywords seed-list add; Settings page (Admin)
+- [x] AuditLog on every mutation (written in the same transaction)
+- [x] Acceptance: per-role access matrix (integration tests); creds round-trip + never returned to client; every mutation audited — all proven by `*.integration.test.ts` against a real Postgres
+- [x] E2E verified on the Docker stack: middleware redirect; allowlist blocks non-listed email; magic-link sign-in via Mailpit completes; dashboard renders; first user is ADMIN
+- Commits: `03ef8b5` (crypto+RBAC), `7752831` (domain), `f0181ca` (auth), `4cf571a` (services+integration tests), `4642cc7` (dashboard UI), + trustHost fix
 
 ## Phase 2 — Drafting core (manual trigger)  ·  status: pending
 - [ ] `callClaude` wrapper: structured outputs, prompt caching, retries, UsageRecord, budget guard
@@ -90,5 +92,6 @@ deviation here with a reason.
 - **Prisma client default output** (`node_modules/.prisma/client`) so imports use the standard `@prisma/client` path.
 - **Phase 0 commit:** `071379d` (`chore: scaffold Phase 0 foundation`). Initial commit on `main` (greenfield baseline); later phases use branches/PRs per the CI model.
 - **Local dev env:** root `.env` is the canonical source of truth (gitignored); Prisma scripts load it via `dotenv-cli` (`dotenv -e ../../.env`), which tolerates a missing file so CI works off job-level env instead.
+- **Auth runtime (self-hosted):** set `AUTH_TRUST_HOST=true` (and `trustHost: true` in auth.config) or Auth.js throws `UntrustedHost` behind localhost/proxy. The allowlist (`ALLOWED_SIGNIN_EMAILS`) is checked at link-request time, so non-allowlisted emails never receive a magic link. JWT session strategy so middleware authorizes at the edge without a DB hit. First user to sign in is promoted to ADMIN.
 - **Git note:** the user's global `~/.gitconfig` has a malformed empty `gpg.format` that aborts `git commit`/`git log`. Worked around with `GIT_CONFIG_GLOBAL=/dev/null` + explicit identity; their global config was left untouched.
 - **Full-Docker run path (per owner request):** web + worker are now containerized alongside Postgres + Inngest. `docker compose up -d --build` runs the whole stack (root `Dockerfile`, one shared `scribe-app` image; `web` owns the build, worker/migrate reuse it; a one-shot `migrate` service applies migrations first). Host `pnpm dev` remains the fast dev path. This pulls Spec §8 (self-host containerization) forward from Phase 8; Phase 8 will refine for production (smaller image / standalone, secrets, healthchecks). Gotchas captured: single build owner avoids the shared-tag race; `INNGEST_DEV=http://inngest:8288` keeps the worker on the local dev server (no signing key) under `NODE_ENV=production`.

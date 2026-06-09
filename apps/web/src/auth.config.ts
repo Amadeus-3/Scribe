@@ -7,6 +7,9 @@ import type { NextAuthConfig } from 'next-auth';
  * gate (the per-action `authorize()` helper enforces RBAC server-side).
  */
 export const authConfig = {
+  // Self-hosted behind a reverse proxy / Docker — trust the incoming host so
+  // both the middleware instance and the full auth.ts instance accept it.
+  trustHost: true,
   pages: { signIn: '/login', verifyRequest: '/login/verify' },
   providers: [],
   callbacks: {
