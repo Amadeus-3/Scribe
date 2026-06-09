@@ -16,6 +16,14 @@ export * from './auth/authorize';
 // Observability
 export * from './observability/logger';
 
+// Domain
+export * from './audit/audit-log';
+export * from './domain/settings';
+export * from './domain/style-guide';
+export * from './domain/site';
+export * from './domain/keyword';
+
 // Database access + generated Prisma types and enums
+export type { Db } from './db/types';
 export * from './db/client';
 export * from '@prisma/client';
