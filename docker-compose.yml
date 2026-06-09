@@ -45,6 +45,8 @@ services:
       DIRECT_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
       # Use the local Inngest dev server (no signing keys); not Inngest Cloud.
       INNGEST_DEV: http://inngest:8288
+      # Magic-link email goes to the Mailpit container (overrides .env localhost).
+      EMAIL_SERVER: smtp://mailpit:1025
     ports:
       - '3000:3000'
     depends_on:
@@ -52,6 +54,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     restart: unless-stopped
 
   # Applies committed migrations to a fresh/updated DB, then exits (one-shot).
@@ -88,6 +92,15 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  # Local mail catcher for magic-link sign-in (SMTP :1025, web UI :8025).
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: scribe-mailpit
+    restart: unless-stopped
+    ports:
+      - '1025:1025'
+      - '8025:8025'
 
   inngest:
     image: inngest/inngest:latest
