@@ -28,6 +28,8 @@ export const REDACT_PATHS: string[] = [
   'secret',
   '*.secret',
   // Named environment secrets
+  'OPENROUTER_API_KEY',
+  'GEMINI_API_KEY',
   'ANTHROPIC_API_KEY',
   'AUTH_SECRET',
   'ENCRYPTION_KEY',
@@ -37,6 +39,8 @@ export const REDACT_PATHS: string[] = [
   // Domain secrets
   'cmsCredentials',
   '*.cmsCredentials',
+  'credentialsEnc',
+  '*.credentialsEnc',
   'cmsCredentialsEnc',
   '*.cmsCredentialsEnc',
 ];
@@ -51,7 +55,9 @@ export interface CreateLoggerOptions {
 export function createLogger(opts: CreateLoggerOptions = {}): Logger {
   const isDev = process.env.NODE_ENV === 'development';
   const level =
-    opts.level ?? process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+    opts.level ??
+    process.env.LOG_LEVEL ??
+    (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
 
   const options: LoggerOptions = {
     level,

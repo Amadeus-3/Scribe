@@ -29,9 +29,53 @@ export const SettingsSchema = z.object({
       qa: z.string().min(1),
     })
     .default({
-      brief: 'claude-sonnet-4-6',
-      draft: 'claude-sonnet-4-6',
-      qa: 'claude-haiku-4-5-20251001',
+      brief: '~anthropic/claude-sonnet-latest',
+      draft: '~anthropic/claude-sonnet-latest',
+      qa: '~anthropic/claude-sonnet-latest',
+    }),
+
+  textGeneration: z
+    .object({
+      provider: z.literal('openrouter'),
+    })
+    .default({ provider: 'openrouter' }),
+
+  imageGeneration: z
+    .object({
+      provider: z.literal('gemini'),
+      model: z.string().min(1),
+    })
+    .default({
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-image',
+    }),
+
+  openrouter: z
+    .object({
+      modelCatalogSyncedAt: z.string().datetime().nullable().default(null),
+      modelCatalog: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            name: z.string().min(1),
+            description: z.string().nullable(),
+            contextLength: z.number().int().positive().nullable(),
+            inputModalities: z.array(z.string()),
+            outputModalities: z.array(z.string()),
+            promptPriceUsdPerToken: z.number().nonnegative().nullable(),
+            completionPriceUsdPerToken: z.number().nonnegative().nullable(),
+            cacheReadPriceUsdPerToken: z.number().nonnegative().nullable(),
+            cacheWritePriceUsdPerToken: z.number().nonnegative().nullable(),
+            supportsStructuredOutputs: z.boolean(),
+            supportsTools: z.boolean(),
+            createdAtUnix: z.number().int().nonnegative().nullable(),
+          }),
+        )
+        .default([]),
+    })
+    .default({
+      modelCatalogSyncedAt: null,
+      modelCatalog: [],
     }),
 
   // Per-model pricing in USD per million tokens (Spec §7.4)
@@ -46,14 +90,13 @@ export const SettingsSchema = z.object({
       }),
     )
     .default({
-      'claude-sonnet-4-6': { inputPerMTok: 3, outputPerMTok: 15 },
-      'claude-haiku-4-5-20251001': { inputPerMTok: 1, outputPerMTok: 5 },
-      'claude-opus-4-8': { inputPerMTok: 15, outputPerMTok: 75 },
+      '~anthropic/claude-sonnet-latest': { inputPerMTok: 3, outputPerMTok: 15 },
     }),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
 export type SettingKey = keyof Settings;
+export type OpenRouterTextModel = Settings['openrouter']['modelCatalog'][number];
 
 /** All settings with seeded defaults applied. */
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});

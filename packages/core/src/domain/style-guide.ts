@@ -6,6 +6,10 @@ export type BannedPhrases = z.infer<typeof BannedPhrasesSchema>;
 
 export const StyleGuideInputSchema = z.object({
   systemPrompt: z.string().min(1, 'A drafting system prompt is required'),
+  businessContext: z.string().optional(),
+  audienceNotes: z.string().optional(),
+  seoGuidance: z.string().optional(),
+  imagePromptInstructions: z.string().optional(),
   toneNotes: z.string().optional(),
   formattingRules: z.string().optional(),
   readingLevel: z.string().optional(),

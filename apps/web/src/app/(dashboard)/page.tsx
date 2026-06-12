@@ -21,8 +21,8 @@ export default async function DashboardHome() {
         <Stat label="Pending review" value={pendingReview} />
       </div>
       <p className="mt-5 text-sm text-muted">
-        Drafting, QA, the review queue, and publishing arrive in later phases. For now, add a site
-        and its style guide, then seed keywords.
+        Add a site, suggest or save its style guide, then generate article drafts from the site
+        page. Publishing still stays behind the human review gate.
       </p>
     </>
   );

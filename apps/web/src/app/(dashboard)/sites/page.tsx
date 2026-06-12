@@ -23,6 +23,7 @@ export default async function SitesPage() {
                 <tr className="text-left text-xs text-muted">
                   <th className="pb-2 font-medium">Name</th>
                   <th className="pb-2 font-medium">URL</th>
+                  <th className="pb-2 font-medium">CMS</th>
                   <th className="pb-2 font-medium">Status</th>
                   <th className="pb-2 font-medium">Credentials</th>
                 </tr>
@@ -36,6 +37,9 @@ export default async function SitesPage() {
                       </Link>
                     </td>
                     <td className="text-muted">{s.baseUrl}</td>
+                    <td>
+                      <Badge tone="muted">{s.cmsType}</Badge>
+                    </td>
                     <td>
                       <Badge tone={s.status === 'ACTIVE' ? 'ok' : 'muted'}>{s.status}</Badge>
                     </td>
@@ -59,7 +63,7 @@ export default async function SitesPage() {
               <Field label="Name" name="name">
                 <input id="name" name="name" required className={inputClass} />
               </Field>
-              <Field label="Base URL" name="baseUrl">
+              <Field label="Public website URL" name="baseUrl">
                 <input
                   id="baseUrl"
                   name="baseUrl"
@@ -68,6 +72,12 @@ export default async function SitesPage() {
                   placeholder="https://blog.example.com"
                   className={inputClass}
                 />
+              </Field>
+              <Field label="Article CMS" name="cmsType">
+                <select id="cmsType" name="cmsType" defaultValue="STRAPI" className={inputClass}>
+                  <option value="STRAPI">Strapi</option>
+                  <option value="WORDPRESS">WordPress</option>
+                </select>
               </Field>
               <Field label="Default author" name="defaultAuthor" hint="Optional CMS author">
                 <input id="defaultAuthor" name="defaultAuthor" className={inputClass} />
