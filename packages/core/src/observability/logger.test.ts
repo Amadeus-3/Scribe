@@ -4,9 +4,13 @@ import { createLogger, REDACT_PATHS } from './logger';
 describe('logger redaction', () => {
   it('lists critical secret-bearing fields in the redaction paths', () => {
     for (const path of [
+      'OPENROUTER_API_KEY',
+      'GEMINI_API_KEY',
       'ANTHROPIC_API_KEY',
       'AUTH_SECRET',
       'ENCRYPTION_KEY',
+      'credentialsEnc',
+      '*.credentialsEnc',
       'cmsCredentialsEnc',
       '*.cmsCredentialsEnc',
       'password',

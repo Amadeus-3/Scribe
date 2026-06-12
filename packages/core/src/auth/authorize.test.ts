@@ -50,6 +50,8 @@ describe('RBAC matrix (Spec §1.4)', () => {
       'styleGuide.update',
       'keyword.create',
       'keyword.delete',
+      'article.create',
+      'article.publish',
       'settings.update',
       'user.manage',
     ] as Action[]) {

@@ -19,7 +19,8 @@ enum Role {
 }
 
 enum CmsType {
-  WORDPRESS // extensible
+  WORDPRESS
+  STRAPI
 }
 
 enum SiteStatus {
@@ -128,10 +129,10 @@ model VerificationToken {
 }
 
 model Site {
-  id     String  @id @default(cuid())
-  name   String
-  baseUrl String
-  cmsType CmsType @default(WORDPRESS)
+  id                String      @id @default(cuid())
+  name              String
+  baseUrl           String
+  cmsType           CmsType     @default(WORDPRESS)
   // Encrypted at rest (Spec §10.3). Stores ciphertext + iv + tag, never plaintext.
   cmsCredentialsEnc String?
   defaultAuthor     String? // CMS author/username to attribute posts to
@@ -144,15 +145,19 @@ model Site {
 }
 
 model StyleGuide {
-  id              String   @id @default(cuid())
-  siteId          String   @unique
-  site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  systemPrompt    String // the drafting system prompt; cached via prompt caching
-  toneNotes       String?
-  formattingRules String?
-  readingLevel    String? // e.g. "Grade 8"
-  bannedPhrases   Json? // string[]
-  updatedAt       DateTime @updatedAt
+  id                      String   @id @default(cuid())
+  siteId                  String   @unique
+  site                    Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  systemPrompt            String // the drafting system prompt; cached via prompt caching
+  businessContext         String?
+  audienceNotes           String?
+  seoGuidance             String?
+  imagePromptInstructions String?
+  toneNotes               String?
+  formattingRules         String?
+  readingLevel            String? // e.g. "Grade 8"
+  bannedPhrases           Json? // string[]
+  updatedAt               DateTime @updatedAt
 }
 
 model Keyword {
@@ -190,31 +195,34 @@ model Brief {
 }
 
 model Article {
-  id              String        @id @default(cuid())
+  id              String            @id @default(cuid())
   siteId          String
-  site            Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  keywordId       String        @unique
-  keyword         Keyword       @relation(fields: [keywordId], references: [id], onDelete: Cascade)
-  briefId         String?       @unique
-  brief           Brief?        @relation(fields: [briefId], references: [id])
+  site            Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  keywordId       String            @unique
+  keyword         Keyword           @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  briefId         String?           @unique
+  brief           Brief?            @relation(fields: [briefId], references: [id])
   title           String?
   slug            String?
   metaDescription String?
+  imagePrompt     String?
+  imageMimeType   String?
+  imageDataBase64 String?
   contentMarkdown String? // canonical content
   contentHtml     String? // sanitized render/publish form
-  status          ArticleStatus @default(QUEUED)
+  status          ArticleStatus     @default(QUEUED)
   wordCount       Int?
   qaReport        Json? // { checks: [{ id, pass, detail }], score }
   llmModel        String?
-  costUsd         Decimal?      @db.Decimal(10, 4)
-  regenAttempts   Int           @default(0)
-  currentVersion  Int           @default(0)
+  costUsd         Decimal?          @db.Decimal(10, 4)
+  regenAttempts   Int               @default(0)
+  currentVersion  Int               @default(0)
   revisions       ArticleRevision[]
   reviews         Review[]
   publishRecords  PublishRecord[]
   usageRecords    UsageRecord[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   @@index([status])
   @@index([siteId, status])
@@ -297,4 +305,10 @@ model AuditLog {
 model Setting {
   key   String @id
   value Json
+}
+
+model ProviderCredential {
+  provider       String   @id
+  credentialsEnc String
+  updatedAt      DateTime @updatedAt
 }

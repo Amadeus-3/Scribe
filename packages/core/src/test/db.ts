@@ -51,6 +51,7 @@ const TABLES = [
   'VerificationToken',
   'Site',
   'Setting',
+  'ProviderCredential',
   'User',
 ];
 

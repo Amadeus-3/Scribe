@@ -15,15 +15,17 @@ export function ActionForm({
   children,
   submitLabel = 'Save',
   className,
+  encType,
 }: {
   action: (prev: FormState, fd: FormData) => Promise<FormState>;
   children: ReactNode;
   submitLabel?: string;
   className?: string;
+  encType?: 'multipart/form-data';
 }) {
   const [state, formAction, pending] = useActionState(action, initial);
   return (
-    <form action={formAction} className={className}>
+    <form action={formAction} className={className} encType={encType}>
       <div className="grid gap-3">{children}</div>
       <div className="mt-3 flex items-center gap-3">
         <button

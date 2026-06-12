@@ -33,8 +33,10 @@ export const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   DIRECT_URL: z.string().min(1),
 
-  // Anthropic / Claude
-  ANTHROPIC_API_KEY: z.string().min(1),
+  // AI providers. Provider-specific callers enforce the required key at use time.
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
 
   // Inngest — optional in dev (the local dev server supplies defaults).
   INNGEST_EVENT_KEY: z.string().min(1).optional(),

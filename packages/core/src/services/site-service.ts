@@ -1,11 +1,13 @@
-import type { PrismaClient, Site, SiteStatus } from '@prisma/client';
+import type { CmsType, PrismaClient, Site, SiteStatus } from '@prisma/client';
 import { authorize, type Actor } from '../auth/authorize';
 import { recordAudit } from '../audit/audit-log';
 import { encryptSecret, decryptSecret } from '../crypto/encryption';
 import {
+  CmsCredentialsSchema,
+  LegacyWordPressCredentialsSchema,
   SiteInputSchema,
-  WordPressCredentialsSchema,
-  type WordPressCredentials,
+  type CmsCredentials,
+  type SiteCredentialsSummary,
 } from '../domain/site';
 
 /**
@@ -18,7 +20,7 @@ export interface SiteDTO {
   id: string;
   name: string;
   baseUrl: string;
-  cmsType: string;
+  cmsType: CmsType;
   defaultAuthor: string | null;
   status: SiteStatus;
   briefAutoApprove: boolean;
@@ -38,6 +40,48 @@ function toSiteDTO(site: Site): SiteDTO {
     briefAutoApprove: site.briefAutoApprove,
     hasCredentials: Boolean(site.cmsCredentialsEnc),
     createdAt: site.createdAt,
+  };
+}
+
+function parseCmsCredentials(cmsType: CmsType, raw: unknown): CmsCredentials {
+  const base = raw && typeof raw === 'object' ? raw : {};
+  const candidate = 'cmsType' in base ? base : { cmsType, ...base };
+
+  if (cmsType === 'WORDPRESS') {
+    const legacy = LegacyWordPressCredentialsSchema.safeParse(raw);
+    if (legacy.success) return legacy.data;
+  }
+
+  return CmsCredentialsSchema.parse(candidate);
+}
+
+function toCredentialsSummary(
+  cmsType: CmsType,
+  credentials: CmsCredentials | null,
+): SiteCredentialsSummary {
+  if (cmsType === 'STRAPI') {
+    const strapi = credentials?.cmsType === 'STRAPI' ? credentials : null;
+    return {
+      cmsType: 'STRAPI',
+      apiBaseUrl: strapi?.apiBaseUrl ?? null,
+      collectionApiId: strapi?.collectionApiId ?? 'articles',
+      fieldMap: strapi?.fieldMap ?? {
+        title: 'title',
+        slug: 'slug',
+        content: 'content',
+        metaDescription: 'metaDescription',
+      },
+      contentFormat: strapi?.contentFormat ?? 'HTML',
+      publicationStatus: strapi?.publicationStatus ?? 'DRAFT',
+      locale: strapi?.locale ?? null,
+      hasSecret: credentials?.cmsType === 'STRAPI' && credentials.apiToken.length > 0,
+    };
+  }
+
+  return {
+    cmsType: 'WORDPRESS',
+    username: credentials?.cmsType === 'WORDPRESS' ? credentials.username : null,
+    hasSecret: credentials?.cmsType === 'WORDPRESS' && credentials.applicationPassword.length > 0,
   };
 }
 
@@ -61,6 +105,7 @@ export async function createSite(db: PrismaClient, actor: Actor, input: unknown)
       data: {
         name: data.name,
         baseUrl: data.baseUrl,
+        cmsType: data.cmsType,
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
       },
@@ -86,11 +131,15 @@ export async function updateSite(
   authorize(actor, 'site.update');
   const data = SiteInputSchema.parse(input);
   return db.$transaction(async (tx) => {
+    const current = await tx.site.findUniqueOrThrow({ where: { id } });
+    const cmsTypeChanged = current.cmsType !== data.cmsType;
     const site = await tx.site.update({
       where: { id },
       data: {
         name: data.name,
         baseUrl: data.baseUrl,
+        cmsType: data.cmsType,
+        ...(cmsTypeChanged ? { cmsCredentialsEnc: null } : {}),
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
       },
@@ -101,6 +150,23 @@ export async function updateSite(
       action: 'site.updated',
       entityType: 'Site',
       entityId: site.id,
+      metadata: { cmsType: site.cmsType, credentialsCleared: cmsTypeChanged },
+    });
+    return toSiteDTO(site);
+  });
+}
+
+export async function deleteSite(db: PrismaClient, actor: Actor, id: string): Promise<SiteDTO> {
+  authorize(actor, 'site.delete');
+  return db.$transaction(async (tx) => {
+    const site = await tx.site.delete({ where: { id } });
+    await recordAudit(tx, {
+      actorId: actor.id,
+      actorType: 'human',
+      action: 'site.deleted',
+      entityType: 'Site',
+      entityId: site.id,
+      metadata: { name: site.name, baseUrl: site.baseUrl, cmsType: site.cmsType },
     });
     return toSiteDTO(site);
   });
@@ -138,10 +204,16 @@ export async function setSiteCredentials(
   credentials: unknown,
 ): Promise<void> {
   authorize(actor, 'site.credentials.manage');
-  const parsed = WordPressCredentialsSchema.parse(credentials);
+  const base = credentials && typeof credentials === 'object' ? credentials : {};
+  const parsed = CmsCredentialsSchema.parse(
+    'cmsType' in base ? base : { cmsType: 'WORDPRESS', ...base },
+  );
   const ciphertext = encryptSecret(JSON.stringify(parsed));
   await db.$transaction(async (tx) => {
-    await tx.site.update({ where: { id }, data: { cmsCredentialsEnc: ciphertext } });
+    await tx.site.update({
+      where: { id },
+      data: { cmsType: parsed.cmsType, cmsCredentialsEnc: ciphertext },
+    });
     await recordAudit(tx, {
       actorId: actor.id,
       actorType: 'human',
@@ -149,7 +221,16 @@ export async function setSiteCredentials(
       entityType: 'Site',
       entityId: id,
       // Never record the secret itself.
-      metadata: { username: parsed.username },
+      metadata:
+        parsed.cmsType === 'WORDPRESS'
+          ? { cmsType: parsed.cmsType, username: parsed.username }
+          : {
+              cmsType: parsed.cmsType,
+              apiBaseUrl: parsed.apiBaseUrl,
+              collectionApiId: parsed.collectionApiId,
+              contentFormat: parsed.contentFormat,
+              publicationStatus: parsed.publicationStatus,
+            },
     });
   });
 }
@@ -162,9 +243,37 @@ export async function getSiteCredentials(
   db: PrismaClient,
   actor: Actor,
   id: string,
-): Promise<WordPressCredentials | null> {
+): Promise<CmsCredentials | null> {
   authorize(actor, 'site.credentials.manage');
   const site = await db.site.findUnique({ where: { id } });
   if (!site?.cmsCredentialsEnc) return null;
-  return WordPressCredentialsSchema.parse(JSON.parse(decryptSecret(site.cmsCredentialsEnc)));
+  return parseCmsCredentials(site.cmsType, JSON.parse(decryptSecret(site.cmsCredentialsEnc)));
+}
+
+/**
+ * Admin-only, client-safe metadata for credential forms. Secret values are
+ * deliberately omitted while non-secret Strapi mapping can be edited.
+ */
+export async function getSiteCredentialsSummary(
+  db: PrismaClient,
+  actor: Actor,
+  id: string,
+): Promise<SiteCredentialsSummary> {
+  authorize(actor, 'site.credentials.manage');
+  const site = await db.site.findUnique({ where: { id } });
+  if (!site) {
+    throw new Error('Site not found');
+  }
+  let credentials: CmsCredentials | null = null;
+  if (site.cmsCredentialsEnc) {
+    try {
+      credentials = parseCmsCredentials(
+        site.cmsType,
+        JSON.parse(decryptSecret(site.cmsCredentialsEnc)),
+      );
+    } catch {
+      credentials = null;
+    }
+  }
+  return toCredentialsSummary(site.cmsType, credentials);
 }

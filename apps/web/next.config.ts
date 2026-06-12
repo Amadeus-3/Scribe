@@ -3,6 +3,11 @@ import { withSentryConfig } from '@sentry/nextjs';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '7mb',
+    },
+  },
   // @scribe/core is consumed as TypeScript source; Next must transpile it.
   transpilePackages: ['@scribe/core'],
 };

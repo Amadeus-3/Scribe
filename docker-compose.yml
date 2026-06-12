@@ -4,7 +4,8 @@
 #   docker compose up -d --build
 #
 # Services: Postgres, Inngest dev server, a one-shot migrate, the web dashboard
-# (:3000), and the worker (:3100). web + worker build from the root Dockerfile.
+# (:3000 by default, override with WEB_PORT), and the worker (:3100).
+# web + worker build from the root Dockerfile.
 #
 # NOTE: during active feature development, `pnpm dev` on the host gives faster
 # hot-reload (see the /scribe skill). This stack is the run/deploy path.
@@ -40,7 +41,9 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      APP_BASE_URL: http://localhost:3000
+      APP_BASE_URL: http://localhost:${WEB_PORT:-3000}
+      AUTH_URL: http://localhost:${WEB_PORT:-3000}
+      NEXTAUTH_URL: http://localhost:${WEB_PORT:-3000}
       # Self-hosted behind localhost/proxy: trust the incoming host (Auth.js).
       AUTH_TRUST_HOST: 'true'
       DATABASE_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
@@ -50,7 +53,7 @@ services:
       # Magic-link email goes to the Mailpit container (overrides .env localhost).
       EMAIL_SERVER: smtp://mailpit:1025
     ports:
-      - '3000:3000'
+      - '${WEB_PORT:-3000}:3000'
     depends_on:
       postgres:
         condition: service_healthy

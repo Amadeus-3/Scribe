@@ -22,6 +22,10 @@ export async function upsertStyleGuide(
   const data = StyleGuideInputSchema.parse(input);
   const fields = {
     systemPrompt: data.systemPrompt,
+    businessContext: data.businessContext ?? null,
+    audienceNotes: data.audienceNotes ?? null,
+    seoGuidance: data.seoGuidance ?? null,
+    imagePromptInstructions: data.imagePromptInstructions ?? null,
     toneNotes: data.toneNotes ?? null,
     formattingRules: data.formattingRules ?? null,
     readingLevel: data.readingLevel ?? null,

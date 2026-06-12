@@ -23,11 +23,25 @@ export * from './domain/style-guide';
 export * from './domain/site';
 export * from './domain/keyword';
 
+// AI providers
+export * from './ai/openrouter';
+export * from './ai/gemini-image';
+export * from './ai/style-guide-suggester';
+export * from './ai/article-drafter';
+
+// Public site context
+export * from './site-context/public-site-context';
+
+// CMS publishers
+export * from './cms/strapi-publisher';
+
 // Services (authorize + Zod + audit-in-transaction)
 export * from './services/site-service';
 export * from './services/style-guide-service';
 export * from './services/keyword-service';
+export * from './services/article-service';
 export * from './services/settings-service';
+export * from './services/provider-credential-service';
 
 // Database access + generated Prisma types and enums
 export type { Db } from './db/types';

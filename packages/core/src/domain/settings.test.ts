@@ -6,8 +6,11 @@ describe('settings schema + defaults', () => {
   it('seeds the budget + model defaults', () => {
     expect(DEFAULT_SETTINGS.monthly_budget_usd).toBe(50);
     expect(DEFAULT_SETTINGS.per_article_cost_ceiling_usd).toBe(2);
-    expect(DEFAULT_SETTINGS.models.qa).toContain('haiku');
-    expect(DEFAULT_SETTINGS.pricing['claude-sonnet-4-6']?.inputPerMTok).toBe(3);
+    expect(DEFAULT_SETTINGS.textGeneration.provider).toBe('openrouter');
+    expect(DEFAULT_SETTINGS.models.qa).toContain('anthropic');
+    expect(DEFAULT_SETTINGS.imageGeneration.model).toBe('gemini-3.1-flash-image');
+    expect(DEFAULT_SETTINGS.openrouter.modelCatalog).toEqual([]);
+    expect(DEFAULT_SETTINGS.pricing['~anthropic/claude-sonnet-latest']?.inputPerMTok).toBe(3);
   });
 
   it('rejects invalid values', () => {
