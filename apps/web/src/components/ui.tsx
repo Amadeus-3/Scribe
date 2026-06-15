@@ -50,11 +50,12 @@ export function Field({ label, name, hint, children }: {
 
 export function Badge({ children, tone = 'default' }: {
   children: ReactNode;
-  tone?: 'default' | 'ok' | 'danger' | 'muted';
+  tone?: 'default' | 'ok' | 'warn' | 'danger' | 'muted';
 }) {
   const tones: Record<string, string> = {
     default: 'bg-accent/15 text-accent',
     ok: 'bg-ok/15 text-ok',
+    warn: 'bg-warn/15 text-warn',
     danger: 'bg-danger/15 text-danger',
     muted: 'bg-panel-2 text-muted',
   };
