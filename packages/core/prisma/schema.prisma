@@ -205,14 +205,20 @@ model Article {
   title           String?
   slug            String?
   metaDescription String?
+  // Reviewer-chosen CMS taxonomy (by slug); resolved to CMS documentIds at publish.
+  categorySlug    String?
+  tagSlugs        String[] @default([])
+  // Hero image: prompt + the single uploaded/generated hero asset.
   imagePrompt     String?
   imageMimeType   String?
   imageDataBase64 String?
+  // In-body (supporting) images, each with its own prompt + optional uploaded asset.
+  images          ArticleImage[]
   contentMarkdown String? // canonical content
   contentHtml     String? // sanitized render/publish form
   status          ArticleStatus     @default(QUEUED)
   wordCount       Int?
-  qaReport        Json? // { checks: [{ id, pass, detail }], score }
+  qaReport        Json? // SeoReport (seo/seo-report.ts): { version, score, verdict, checks[], flags[], wordCount, generatedAt }
   llmModel        String?
   costUsd         Decimal?          @db.Decimal(10, 4)
   regenAttempts   Int               @default(0)
@@ -226,6 +232,28 @@ model Article {
 
   @@index([status])
   @@index([siteId, status])
+}
+
+// In-body / supporting images suggested by the drafter for one article.
+// The hero image stays on Article; these are the additional images a longer
+// article needs (a chart, a flowchart, a comparison visual, ...), each with a
+// placement hint, alt text, aspect ratio, its own prompt, and an optional
+// uploaded/generated asset. No autonomous publishing implications (Spec §10.1).
+model ArticleImage {
+  id          String   @id @default(cuid())
+  articleId   String
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  position    Int // order within the article (0-based)
+  placement   String? // where it belongs, e.g. the heading it should follow
+  alt         String? // alt text (accessibility + relevance signal)
+  prompt      String // detailed manual generation prompt
+  aspectRatio String? // e.g. "16:9", "4:3"
+  mimeType    String? // set once an image is uploaded/generated
+  dataBase64  String? // the asset, base64-encoded; null until provided
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([articleId])
 }
 
 model ArticleRevision {
