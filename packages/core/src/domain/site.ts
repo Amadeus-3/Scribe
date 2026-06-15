@@ -35,21 +35,47 @@ export const StrapiCredentialsSchema = z.object({
     .min(1)
     .regex(/^[a-zA-Z0-9_-]+$/, 'Collection API ID should not include /api/ or slashes')
     .default('articles'),
+  // Plural API IDs of the taxonomy collections used to resolve relations by slug.
+  categoryApiId: z
+    .string()
+    .min(1)
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Category API ID should not include /api/ or slashes')
+    .default('categories'),
+  tagApiId: z
+    .string()
+    .min(1)
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Tag API ID should not include /api/ or slashes')
+    .default('tags'),
   fieldMap: z
     .object({
       title: z.string().min(1).default('title'),
       slug: z.string().min(1).default('slug'),
       content: z.string().min(1).default('content'),
       metaDescription: z.string().optional(),
+      image: z.string().optional(),
+      readTime: z.string().optional(),
+      author: z.string().optional(),
+      date: z.string().optional(),
+      featured: z.string().optional(),
+      // Article relation attributes for the chosen category / tags.
+      category: z.string().min(1).default('category'),
+      tags: z.string().min(1).default('tags'),
     })
     .default({
       title: 'title',
       slug: 'slug',
       content: 'content',
-      metaDescription: 'metaDescription',
+      metaDescription: 'description',
+      image: 'image',
+      readTime: 'readTime',
+      author: 'author',
+      date: 'date',
+      featured: 'featured',
+      category: 'category',
+      tags: 'tags',
     }),
   contentFormat: StrapiContentFormatSchema.default('HTML'),
-  publicationStatus: StrapiPublicationStatusSchema.default('DRAFT'),
+  publicationStatus: StrapiPublicationStatusSchema.default('PUBLISHED'),
   locale: z.string().min(1).optional(),
 });
 export type StrapiCredentials = z.infer<typeof StrapiCredentialsSchema>;
