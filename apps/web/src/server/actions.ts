@@ -29,12 +29,18 @@ import {
   suggestStyleGuideWithOpenRouter,
   generateArticleDraft,
   updateArticleDraft,
+  updateArticleKeyword,
+  regenerateArticleDraft,
+  autoAssignArticleTaxonomy,
+  suggestArticleInlineImages,
   approveArticle,
   requestArticleChanges,
   rejectArticle,
   publishArticleToCms,
   uploadArticleImage,
   generateArticleImage,
+  uploadArticleInlineImage,
+  generateArticleInlineImage,
   ArticlePublishError,
   isArticleImageMimeType,
   MAX_ARTICLE_IMAGE_BYTES,
@@ -185,6 +191,11 @@ export async function setCredentialsAction(
               slug: str(formData.get('fieldMap.slug')),
               content: str(formData.get('fieldMap.content')),
               metaDescription: optStr(formData.get('fieldMap.metaDescription')),
+              image: optStr(formData.get('fieldMap.image')),
+              readTime: optStr(formData.get('fieldMap.readTime')),
+              author: optStr(formData.get('fieldMap.author')),
+              date: optStr(formData.get('fieldMap.date')),
+              featured: optStr(formData.get('fieldMap.featured')),
             },
             contentFormat:
               str(formData.get('contentFormat')) === 'STRAPI_BLOCKS'
@@ -344,18 +355,121 @@ export async function updateArticleDraftAction(
   try {
     const actor = await requireActor();
     const id = str(formData.get('id'));
+    const hasTaxonomyPicker = formData.get('taxonomyPicker') === '1';
     await updateArticleDraft(prisma, actor, id, {
       title: str(formData.get('title')),
       slug: optStr(formData.get('slug')),
       metaDescription: optStr(formData.get('metaDescription')),
       imagePrompt: optStr(formData.get('imagePrompt')),
       contentMarkdown: str(formData.get('contentMarkdown')),
+      ...(hasTaxonomyPicker
+        ? {
+            categorySlug: str(formData.get('categorySlug')),
+            tagSlugs: formData.getAll('tagSlugs').map(String),
+          }
+        : {}),
     });
     revalidatePath('/articles');
     revalidatePath(`/articles/${id}`);
     return { ok: true, message: 'Article saved.' };
   } catch (e) {
     return toState('article.update', e);
+  }
+}
+
+export async function autoAssignTaxonomyAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const id = str(formData.get('id'));
+    await autoAssignArticleTaxonomy(prisma, actor, id, {
+      apiKey: await getOpenRouterApiKey(prisma, actor),
+    });
+    revalidatePath(`/articles/${id}`);
+    return { ok: true, message: 'Category & tags assigned by AI.' };
+  } catch (e) {
+    if (e instanceof ArticleDraftError) {
+      logger.warn(
+        { action: 'article.taxonomy.assign', errorMessage: e.message },
+        'classify failed',
+      );
+      return { ok: false, error: e.message };
+    }
+    return toState('article.taxonomy.assign', e);
+  }
+}
+
+export async function updateArticleKeywordAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const id = str(formData.get('id'));
+    await updateArticleKeyword(prisma, actor, id, str(formData.get('keyword')));
+    revalidatePath('/articles');
+    revalidatePath(`/articles/${id}`);
+    return { ok: true, message: 'Keyword updated and re-scored.' };
+  } catch (e) {
+    return toState('article.keyword.update', e);
+  }
+}
+
+export async function regenerateArticleAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const id = str(formData.get('id'));
+    await regenerateArticleDraft(
+      prisma,
+      actor,
+      id,
+      { comments: optStr(formData.get('comments')) },
+      { apiKey: await getOpenRouterApiKey(prisma, actor) },
+    );
+    revalidatePath('/articles');
+    revalidatePath(`/articles/${id}`);
+    return { ok: true, message: 'Article regenerated.' };
+  } catch (e) {
+    if (e instanceof ArticleDraftError) {
+      logger.warn({ action: 'article.regenerate', errorMessage: e.message }, 'regenerate failed');
+      return { ok: false, error: e.message };
+    }
+    return toState('article.regenerate', e);
+  }
+}
+
+export async function suggestInlineImagesAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const id = str(formData.get('id'));
+    const created = await suggestArticleInlineImages(prisma, actor, id, {
+      apiKey: await getOpenRouterApiKey(prisma, actor),
+    });
+    revalidatePath(`/articles/${id}`);
+    return {
+      ok: true,
+      message:
+        created.length > 0
+          ? `Suggested ${created.length} in-body image${created.length === 1 ? '' : 's'}.`
+          : 'No in-body images needed for this article.',
+    };
+  } catch (e) {
+    if (e instanceof ArticleDraftError) {
+      logger.warn(
+        { action: 'article.inlineImages.suggest', errorMessage: e.message },
+        'suggest failed',
+      );
+      return { ok: false, error: e.message };
+    }
+    return toState('article.inlineImages.suggest', e);
   }
 }
 
@@ -475,6 +589,62 @@ export async function generateArticleImageAction(
       return { ok: false, error: e.message };
     }
     return toState('article.image.generate', e);
+  }
+}
+
+export async function uploadArticleInlineImageAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const articleId = str(formData.get('articleId'));
+    const imageId = str(formData.get('imageId'));
+    const imageFile = fileFromForm(formData.get('imageFile'));
+    if (!imageFile || imageFile.size === 0) {
+      return { ok: false, error: 'Choose an image file to upload.' };
+    }
+    if (imageFile.size > MAX_ARTICLE_IMAGE_BYTES) {
+      return { ok: false, error: 'Upload an image smaller than 5 MB.' };
+    }
+    if (!isArticleImageMimeType(imageFile.type)) {
+      return { ok: false, error: 'Upload a JPEG, PNG, WebP, AVIF, or GIF image.' };
+    }
+
+    const dataBase64 = Buffer.from(await imageFile.arrayBuffer()).toString('base64');
+    await uploadArticleInlineImage(prisma, actor, imageId, {
+      mimeType: imageFile.type,
+      dataBase64,
+    });
+    revalidatePath(`/articles/${articleId}`);
+    return { ok: true, message: 'In-body image uploaded.' };
+  } catch (e) {
+    return toState('article.inlineImage.upload', e);
+  }
+}
+
+export async function generateArticleInlineImageAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const articleId = str(formData.get('articleId'));
+    const imageId = str(formData.get('imageId'));
+    await generateArticleInlineImage(prisma, actor, imageId, {
+      apiKey: await getGeminiApiKeyForImageGeneration(prisma, actor),
+    });
+    revalidatePath(`/articles/${articleId}`);
+    return { ok: true, message: 'In-body image generated.' };
+  } catch (e) {
+    if (e instanceof GeminiImageError) {
+      logger.warn(
+        { action: 'article.inlineImage.generate', errorMessage: e.message },
+        'image failed',
+      );
+      return { ok: false, error: e.message };
+    }
+    return toState('article.inlineImage.generate', e);
   }
 }
 

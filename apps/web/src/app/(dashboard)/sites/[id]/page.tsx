@@ -262,14 +262,56 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />
                 </Field>
                 <Field
-                  label="Meta description field"
+                  label="Description field"
                   name="fieldMap.metaDescription"
-                  hint="Optional"
+                  hint="Your Article content type uses description"
                 >
                   <input
                     id="fieldMap.metaDescription"
                     name="fieldMap.metaDescription"
                     defaultValue={credentialSummary.fieldMap.metaDescription ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Image field" name="fieldMap.image" hint="Optional media field">
+                  <input
+                    id="fieldMap.image"
+                    name="fieldMap.image"
+                    defaultValue={credentialSummary.fieldMap.image ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Read time field" name="fieldMap.readTime" hint="Optional">
+                  <input
+                    id="fieldMap.readTime"
+                    name="fieldMap.readTime"
+                    defaultValue={credentialSummary.fieldMap.readTime ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Author field" name="fieldMap.author" hint="Optional">
+                  <input
+                    id="fieldMap.author"
+                    name="fieldMap.author"
+                    defaultValue={credentialSummary.fieldMap.author ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Date field" name="fieldMap.date" hint="Optional">
+                  <input
+                    id="fieldMap.date"
+                    name="fieldMap.date"
+                    defaultValue={credentialSummary.fieldMap.date ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Featured field" name="fieldMap.featured" hint="Optional boolean">
+                  <input
+                    id="fieldMap.featured"
+                    name="fieldMap.featured"
+                    defaultValue={credentialSummary.fieldMap.featured ?? ''}
                     className={inputClass}
                   />
                 </Field>
@@ -287,15 +329,19 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                     <option value="STRAPI_BLOCKS">Strapi blocks</option>
                   </select>
                 </Field>
-                <Field label="Create as" name="publicationStatus">
+                <Field
+                  label="When publishing from Scribe"
+                  name="publicationStatus"
+                  hint="Draft creates a Strapi draft that must still be published in Strapi."
+                >
                   <select
                     id="publicationStatus"
                     name="publicationStatus"
                     defaultValue={credentialSummary.publicationStatus}
                     className={inputClass}
                   >
-                    <option value="DRAFT">Draft</option>
-                    <option value="PUBLISHED">Published</option>
+                    <option value="PUBLISHED">Create public published entry</option>
+                    <option value="DRAFT">Create Strapi draft only</option>
                   </select>
                 </Field>
               </div>
