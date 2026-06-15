@@ -107,9 +107,15 @@ describe('StrapiCredentialsSchema', () => {
         title: 'title',
         slug: 'slug',
         content: 'content',
+        metaDescription: 'description',
+        image: 'image',
+        readTime: 'readTime',
+        author: 'author',
+        date: 'date',
+        featured: 'featured',
       },
       contentFormat: 'HTML',
-      publicationStatus: 'DRAFT',
+      publicationStatus: 'PUBLISHED',
     });
   });
 });

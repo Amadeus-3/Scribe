@@ -3,14 +3,20 @@ import { getTestPrisma, truncateAll } from '../test/db';
 import { AuthorizationError, type Actor } from '../auth/authorize';
 import {
   approveArticle,
+  autoAssignArticleTaxonomy,
   generateArticleDraft,
   generateArticleImage,
+  listArticleImages,
   listArticlePublishRecords,
   listSiteArticles,
   publishArticleToCms,
+  regenerateArticleDraft,
   requestArticleChanges,
+  suggestArticleInlineImages,
   updateArticleDraft,
+  updateArticleKeyword,
   uploadArticleImage,
+  uploadArticleInlineImage,
 } from './article-service';
 import {
   createSite,
@@ -303,6 +309,639 @@ describe('article draft generation', () => {
     expect(await listSiteArticles(db, admin, site.id)).toHaveLength(1);
     expect(await db.articleRevision.count({ where: { articleId: article.id } })).toBe(1);
     expect(await auditCount('article.drafted')).toBe(1);
+  });
+
+  it('creates in-body image rows from the draft and accepts a per-image upload', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    const contentMarkdown = `Intro paragraph.\n\n## Steps\n\n${'Useful guidance. '.repeat(80)}`;
+    const fetchFn = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build an Emergency Fund',
+                slug: 'how-to-build-an-emergency-fund',
+                metaDescription: 'Practical steps to build an emergency fund on any income.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of calm financial planning.',
+                inlineImages: [
+                  {
+                    placement: 'Steps',
+                    alt: 'Flowchart of the three-step savings system',
+                    aspectRatio: '16:9',
+                    prompt: 'Flat-vector flowchart with three labeled stages, brand-safe, no text.',
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+      text: async () => '',
+    });
+
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build an emergency fund' },
+      { apiKey: 'openrouter-key', fetchFn },
+    );
+
+    const images = await listArticleImages(db, admin, article.id);
+    expect(images).toHaveLength(1);
+    const [first] = images;
+    if (!first) throw new Error('expected an in-body image');
+    expect(first.placement).toBe('Steps');
+    expect(first.alt).toBe('Flowchart of the three-step savings system');
+    expect(first.dataBase64).toBeNull();
+
+    // 1x1 transparent PNG.
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const uploaded = await uploadArticleInlineImage(db, admin, first.id, {
+      mimeType: 'image/png',
+      dataBase64: png,
+    });
+    expect(uploaded.mimeType).toBe('image/png');
+    expect(uploaded.dataBase64).toBe(png);
+    expect(await auditCount('article.inlineImageUploaded')).toBe(1);
+  });
+
+  it('publishes with category/tags connected by documentId and the in-body image embedded', async () => {
+    const site = await createSite(db, admin, { ...siteInput, cmsType: 'STRAPI' });
+    await setSiteCredentials(db, admin, site.id, {
+      cmsType: 'STRAPI',
+      apiToken: 'strapi-secret-token',
+      apiBaseUrl: 'https://strapi.example.com',
+      collectionApiId: 'articles',
+      fieldMap: { title: 'title', slug: 'slug', content: 'content' },
+      contentFormat: 'MARKDOWN',
+      publicationStatus: 'DRAFT',
+    });
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    const contentMarkdown = `Intro paragraph.\n\n## Steps\n\n${'Useful guidance. '.repeat(80)}`;
+    const draftFetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build an Emergency Fund',
+                slug: 'how-to-build-an-emergency-fund',
+                metaDescription: 'Practical steps to build an emergency fund on any income.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of calm financial planning.',
+                inlineImages: [
+                  {
+                    placement: 'Steps',
+                    alt: 'Three-step savings flowchart',
+                    aspectRatio: '16:9',
+                    prompt: 'Flat-vector flowchart with three labeled stages, brand-safe, no text.',
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+      text: async () => '',
+    });
+
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build an emergency fund' },
+      { apiKey: 'openrouter-key', fetchFn: draftFetch },
+    );
+
+    const [image] = await listArticleImages(db, admin, article.id);
+    if (!image) throw new Error('expected an in-body image');
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    await uploadArticleInlineImage(db, admin, image.id, { mimeType: 'image/png', dataBase64: png });
+
+    await updateArticleDraft(db, admin, article.id, {
+      title: 'How to Build an Emergency Fund',
+      contentMarkdown,
+      categorySlug: 'how-to-guides',
+      tagSlugs: ['investing'],
+    });
+    await approveArticle(db, admin, article.id);
+
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const jsonOk = (value: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => value,
+    });
+    const publishFetch = async (url: string, init?: { method?: string; body?: unknown }) => {
+      calls.push({ url, method: init?.method, body: init?.body });
+      if (url.includes('/api/categories')) {
+        return jsonOk({ data: [{ id: 1, documentId: 'cat_doc', name: 'How to guides', slug: 'how-to-guides' }] });
+      }
+      if (url.includes('/api/tags')) {
+        return jsonOk({ data: [{ id: 1, documentId: 'tag_doc', name: 'investing', slug: 'investing' }] });
+      }
+      if (url.includes('/api/upload')) {
+        return jsonOk([{ id: 99, url: 'https://cdn.example.com/inline.png' }]);
+      }
+      return jsonOk({ data: { id: 7, documentId: 'art_doc', slug: 'how-to-build-an-emergency-fund' } });
+    };
+
+    const published = await publishArticleToCms(db, admin, article.id, { fetchFn: publishFetch });
+    expect(published.status).toBe('PUBLISHED');
+
+    const createCall = calls.find(
+      (call) => call.url.includes('/api/articles') && typeof call.body === 'string',
+    );
+    if (!createCall || typeof createCall.body !== 'string') throw new Error('no create call');
+    const payload = JSON.parse(createCall.body) as { data: Record<string, unknown> };
+    expect(payload.data.category).toEqual({ connect: [{ documentId: 'cat_doc' }] });
+    expect(payload.data.tags).toEqual({ connect: [{ documentId: 'tag_doc' }] });
+    expect(String(payload.data.content)).toContain(
+      '![Three-step savings flowchart](https://cdn.example.com/inline.png)',
+    );
+  });
+
+  it('lets the model self-assign category/tags, keeping only existing slugs', async () => {
+    const site = await createSite(db, admin, { ...siteInput, cmsType: 'STRAPI' });
+    await setSiteCredentials(db, admin, site.id, {
+      cmsType: 'STRAPI',
+      apiToken: 'strapi-secret-token',
+      apiBaseUrl: 'https://strapi.example.com',
+      collectionApiId: 'articles',
+      fieldMap: { title: 'title', slug: 'slug', content: 'content' },
+      contentFormat: 'MARKDOWN',
+      publicationStatus: 'DRAFT',
+    });
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    const contentMarkdown = `# How to Build Wealth\n\n${'Useful guidance. '.repeat(80)}`;
+    const jsonOk = (value: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => value,
+    });
+    const fetchFn = async (url: string) => {
+      if (url.includes('/api/categories')) {
+        return jsonOk({ data: [{ id: 1, documentId: 'c1', name: 'How to guides', slug: 'how-to-guides' }] });
+      }
+      if (url.includes('/api/tags')) {
+        return jsonOk({
+          data: [
+            { id: 1, documentId: 't1', name: 'Investing', slug: 'investing' },
+            { id: 2, documentId: 't2', name: 'ETFS', slug: 'etfs' },
+          ],
+        });
+      }
+      return jsonOk({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth',
+                slug: 'how-to-build-wealth',
+                metaDescription: 'Practical steps to build wealth.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of personal finance planning.',
+                categorySlug: 'how-to-guides',
+                tagSlugs: ['investing', 'made-up-tag'],
+              }),
+            },
+          },
+        ],
+      });
+    };
+
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      { apiKey: 'openrouter-key', fetchFn },
+    );
+
+    expect(article.categorySlug).toBe('how-to-guides');
+    expect(article.tagSlugs).toEqual(['investing']);
+  });
+
+  it('classifies an existing article into the taxonomy on demand (existing slugs only)', async () => {
+    const site = await createSite(db, admin, { ...siteInput, cmsType: 'STRAPI' });
+    await setSiteCredentials(db, admin, site.id, {
+      cmsType: 'STRAPI',
+      apiToken: 'strapi-secret-token',
+      apiBaseUrl: 'https://strapi.example.com',
+      collectionApiId: 'articles',
+      fieldMap: { title: 'title', slug: 'slug', content: 'content' },
+      contentFormat: 'MARKDOWN',
+      publicationStatus: 'DRAFT',
+    });
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    const contentMarkdown = `# How to Build Wealth\n\n${'Useful guidance. '.repeat(80)}`;
+    const jsonOk = (value: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => value,
+    });
+
+    // Draft phase: the model assigns nothing, simulating a pre-feature article.
+    const draftFetch = async (url: string) => {
+      if (url.includes('/api/categories')) {
+        return jsonOk({ data: [{ id: 1, documentId: 'c1', name: 'How to guides', slug: 'how-to-guides' }] });
+      }
+      if (url.includes('/api/tags')) {
+        return jsonOk({ data: [{ id: 1, documentId: 't1', name: 'Investing', slug: 'investing' }] });
+      }
+      return jsonOk({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth',
+                slug: 'how-to-build-wealth',
+                metaDescription: 'Practical steps to build wealth.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of personal finance planning.',
+                categorySlug: null,
+                tagSlugs: [],
+              }),
+            },
+          },
+        ],
+      });
+    };
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      { apiKey: 'openrouter-key', fetchFn: draftFetch },
+    );
+    expect(article.categorySlug).toBeNull();
+    expect(article.tagSlugs).toEqual([]);
+
+    // Classify phase: the model picks a real category + a real tag + a made-up tag (dropped).
+    const assignFetch = async (url: string) => {
+      if (url.includes('/api/categories')) {
+        return jsonOk({ data: [{ id: 1, documentId: 'c1', name: 'How to guides', slug: 'how-to-guides' }] });
+      }
+      if (url.includes('/api/tags')) {
+        return jsonOk({ data: [{ id: 1, documentId: 't1', name: 'Investing', slug: 'investing' }] });
+      }
+      return jsonOk({
+        choices: [
+          { message: { content: JSON.stringify({ categorySlug: 'how-to-guides', tagSlugs: ['investing', 'made-up'] }) } },
+        ],
+      });
+    };
+    const assigned = await autoAssignArticleTaxonomy(db, admin, article.id, {
+      apiKey: 'openrouter-key',
+      fetchFn: assignFetch,
+    });
+    expect(assigned.categorySlug).toBe('how-to-guides');
+    expect(assigned.tagSlugs).toEqual(['investing']);
+    expect(await auditCount('article.taxonomyAssigned')).toBe(1);
+  });
+
+  it('suggests in-body images for an existing article that has none', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      imagePromptInstructions: 'Clean editorial finance imagery.',
+      bannedPhrases: [],
+    });
+
+    const contentMarkdown = `# How to Build Wealth\n\n## Steps\n\n${'Useful guidance. '.repeat(80)}`;
+    const draftFetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth',
+                slug: 'how-to-build-wealth',
+                metaDescription: 'Practical steps to build wealth.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of personal finance planning.',
+                inlineImages: [],
+              }),
+            },
+          },
+        ],
+      }),
+      text: async () => '',
+    });
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      { apiKey: 'openrouter-key', fetchFn: draftFetch },
+    );
+    expect(await listArticleImages(db, admin, article.id)).toHaveLength(0);
+
+    const suggestFetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                inlineImages: [
+                  {
+                    placement: 'Steps',
+                    alt: 'Three-step savings flowchart',
+                    aspectRatio: '16:9',
+                    prompt: 'Flat-vector flowchart with three labeled stages, brand-safe, no text.',
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    });
+    const created = await suggestArticleInlineImages(db, admin, article.id, {
+      apiKey: 'openrouter-key',
+      fetchFn: suggestFetch,
+    });
+    expect(created).toHaveLength(1);
+    expect(created[0]?.placement).toBe('Steps');
+
+    const images = await listArticleImages(db, admin, article.id);
+    expect(images).toHaveLength(1);
+    expect(await auditCount('article.inlineImagesSuggested')).toBe(1);
+
+    await expect(
+      suggestArticleInlineImages(db, admin, article.id, {
+        apiKey: 'openrouter-key',
+        fetchFn: suggestFetch,
+      }),
+    ).rejects.toThrow(/already has in-body images/);
+  });
+
+  it('regenerates with comments + SEO, preserving taxonomy and in-body images', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+    const okJson = (value: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => value,
+    });
+
+    const v1 = `# How to Build Wealth\n\n## Steps\n\n${'Thin content. '.repeat(80)}`;
+    const draftFetch = async () =>
+      okJson({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth',
+                slug: 'how-to-build-wealth',
+                metaDescription: 'Practical steps to build wealth.',
+                contentMarkdown: v1,
+                imagePrompt: 'Editorial hero image of personal finance planning.',
+                inlineImages: [
+                  {
+                    placement: 'Steps',
+                    alt: 'Savings flowchart',
+                    aspectRatio: '16:9',
+                    prompt: 'Flat-vector flowchart, brand-safe, no text.',
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      });
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      { apiKey: 'openrouter-key', fetchFn: draftFetch },
+    );
+    // Reviewer sets taxonomy manually.
+    await updateArticleDraft(db, admin, article.id, {
+      title: 'How to Build Wealth',
+      contentMarkdown: v1,
+      categorySlug: 'how-to-guides',
+      tagSlugs: ['investing'],
+    });
+    expect(await listArticleImages(db, admin, article.id)).toHaveLength(1);
+
+    const v2 = `# How to Build Wealth Fast\n\n## Steps\n\n${'Much richer guidance with examples. '.repeat(80)}`;
+    const regenFetch = async () =>
+      okJson({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth Fast in 2026',
+                slug: 'how-to-build-wealth-fast',
+                metaDescription:
+                  'A practical, detailed guide to building wealth with real examples and steps.',
+                contentMarkdown: v2,
+                imagePrompt: 'Editorial hero image v2.',
+                inlineImages: [],
+              }),
+            },
+          },
+        ],
+      });
+    const regenerated = await regenerateArticleDraft(
+      db,
+      admin,
+      article.id,
+      { comments: 'Add concrete examples.' },
+      { apiKey: 'openrouter-key', fetchFn: regenFetch },
+    );
+
+    expect(regenerated.title).toBe('How to Build Wealth Fast in 2026');
+    expect(regenerated.status).toBe('PENDING_REVIEW');
+    expect(regenerated.categorySlug).toBe('how-to-guides');
+    expect(regenerated.tagSlugs).toEqual(['investing']);
+    expect(await listArticleImages(db, admin, article.id)).toHaveLength(1);
+    expect(await db.articleRevision.count({ where: { articleId: article.id } })).toBe(3);
+    expect(await auditCount('article.regenerated')).toBe(1);
+
+    // A published article can still be regenerated — it returns to review.
+    await db.article.update({ where: { id: article.id }, data: { status: 'PUBLISHED' } });
+    const reRegenerated = await regenerateArticleDraft(
+      db,
+      admin,
+      article.id,
+      {},
+      { apiKey: 'openrouter-key', fetchFn: regenFetch },
+    );
+    expect(reRegenerated.status).toBe('PENDING_REVIEW');
+  });
+
+  it('edits the primary keyword, re-scores, and rejects a duplicate term', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+    const contentMarkdown = `# How to Build Wealth\n\n## Steps\n\n${'Useful guidance. '.repeat(80)}`;
+    const draftFetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth',
+                slug: 'how-to-build-wealth',
+                metaDescription: 'Practical steps to build wealth.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of personal finance planning.',
+                inlineImages: [],
+              }),
+            },
+          },
+        ],
+      }),
+    });
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      { apiKey: 'openrouter-key', fetchFn: draftFetch },
+    );
+    expect(article.keyword).toBe('how to build wealth');
+
+    const updated = await updateArticleKeyword(db, admin, article.id, 'build wealth fast');
+    expect(updated.keyword).toBe('build wealth fast');
+    expect(updated.seoReport).not.toBeNull();
+    expect(await auditCount('article.keywordUpdated')).toBe(1);
+
+    // A term already used by another keyword on the site is rejected.
+    await addKeywords(db, admin, { siteId: site.id, terms: ['taken term'] });
+    await expect(updateArticleKeyword(db, admin, article.id, 'taken term')).rejects.toThrow(
+      /already exists/,
+    );
+  });
+
+  it('republishes an edited article by updating the existing CMS entry in place', async () => {
+    const site = await createSite(db, admin, { ...siteInput, cmsType: 'STRAPI' });
+    await setSiteCredentials(db, admin, site.id, {
+      cmsType: 'STRAPI',
+      apiToken: 'strapi-secret-token',
+      apiBaseUrl: 'https://strapi.example.com',
+      collectionApiId: 'articles',
+      fieldMap: { title: 'title', slug: 'slug', content: 'content' },
+      contentFormat: 'MARKDOWN',
+      publicationStatus: 'DRAFT',
+    });
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    const contentMarkdown = `# How to Build Wealth\n\n## Steps\n\n${'Useful guidance. '.repeat(80)}`;
+    const draftFetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: 'How to Build Wealth',
+                slug: 'how-to-build-wealth',
+                metaDescription: 'Practical steps to build wealth.',
+                contentMarkdown,
+                imagePrompt: 'Editorial hero image of personal finance planning.',
+                inlineImages: [],
+              }),
+            },
+          },
+        ],
+      }),
+    });
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      { apiKey: 'openrouter-key', fetchFn: draftFetch },
+    );
+    await approveArticle(db, admin, article.id);
+
+    const calls: Array<{ url: string; method?: string }> = [];
+    const jsonOk = (value: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => value,
+    });
+    const publishFetch = async (url: string, init?: { method?: string }) => {
+      calls.push({ url, method: init?.method });
+      return jsonOk({ data: { id: 7, documentId: 'doc_1', slug: 'how-to-build-wealth' } });
+    };
+
+    // First publish → creates a new CMS entry.
+    await publishArticleToCms(db, admin, article.id, { fetchFn: publishFetch });
+    expect(calls.some((c) => /\/api\/articles\?/.test(c.url) && c.method === 'POST')).toBe(true);
+
+    // Edit the published article → it returns to review → approve again.
+    await updateArticleDraft(db, admin, article.id, {
+      title: 'How to Build Wealth (Updated)',
+      contentMarkdown: `# How to Build Wealth\n\n## Steps\n\n${'Even better guidance. '.repeat(80)}`,
+    });
+    await approveArticle(db, admin, article.id);
+
+    calls.length = 0;
+    // Second publish → updates the existing entry in place (PUT), no new create.
+    const republished = await publishArticleToCms(db, admin, article.id, { fetchFn: publishFetch });
+    expect(republished.status).toBe('PUBLISHED');
+    expect(calls.some((c) => c.url.includes('/api/articles/doc_1') && c.method === 'PUT')).toBe(true);
+    expect(calls.some((c) => /\/api\/articles\?/.test(c.url) && c.method === 'POST')).toBe(false);
+
+    const records = await listArticlePublishRecords(db, admin, article.id);
+    expect(records.filter((r) => r.status === 'success')).toHaveLength(2);
   });
 
   it('supports human edits, review decisions, and manual/generated images', async () => {

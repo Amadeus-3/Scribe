@@ -32,8 +32,13 @@ export * from './ai/article-drafter';
 // Public site context
 export * from './site-context/public-site-context';
 
+// SEO scoring (deterministic, advisory)
+export * from './seo/seo-report';
+export * from './seo/seo-score';
+
 // CMS publishers
 export * from './cms/strapi-publisher';
+export * from './cms/strapi-taxonomy';
 
 // Services (authorize + Zod + audit-in-transaction)
 export * from './services/site-service';
