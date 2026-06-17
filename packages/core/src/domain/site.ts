@@ -109,6 +109,16 @@ export const SiteInputSchema = z.object({
   cmsType: CmsTypeSchema.default('WORDPRESS'),
   defaultAuthor: z.string().optional(),
   briefAutoApprove: z.boolean().default(true),
+  // Google Search Console property id, e.g. "https://example.com/" or "sc-domain:example.com".
+  gscPropertyUrl: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || /^(https?:\/\/.+|sc-domain:.+)$/.test(v), {
+      message: 'Use an https URL or sc-domain:example.com',
+    }),
+  // Opt this site into the weekly trending-topic discovery cron.
+  discoveryEnabled: z.boolean().default(false),
 });
 export type SiteInput = z.infer<typeof SiteInputSchema>;
 

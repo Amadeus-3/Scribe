@@ -24,6 +24,10 @@ export interface SiteDTO {
   defaultAuthor: string | null;
   status: SiteStatus;
   briefAutoApprove: boolean;
+  /** Google Search Console property id (non-secret) for trending-topic discovery. */
+  gscPropertyUrl: string | null;
+  /** Whether the weekly discovery cron should run for this site. */
+  discoveryEnabled: boolean;
   /** Whether credentials are stored — the ciphertext itself is never exposed. */
   hasCredentials: boolean;
   createdAt: Date;
@@ -38,6 +42,8 @@ function toSiteDTO(site: Site): SiteDTO {
     defaultAuthor: site.defaultAuthor,
     status: site.status,
     briefAutoApprove: site.briefAutoApprove,
+    gscPropertyUrl: site.gscPropertyUrl,
+    discoveryEnabled: site.discoveryEnabled,
     hasCredentials: Boolean(site.cmsCredentialsEnc),
     createdAt: site.createdAt,
   };
@@ -115,6 +121,8 @@ export async function createSite(db: PrismaClient, actor: Actor, input: unknown)
         cmsType: data.cmsType,
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
+        gscPropertyUrl: data.gscPropertyUrl ?? null,
+        discoveryEnabled: data.discoveryEnabled,
       },
     });
     await recordAudit(tx, {
@@ -149,6 +157,8 @@ export async function updateSite(
         ...(cmsTypeChanged ? { cmsCredentialsEnc: null } : {}),
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
+        gscPropertyUrl: data.gscPropertyUrl ?? null,
+        discoveryEnabled: data.discoveryEnabled,
       },
     });
     await recordAudit(tx, {

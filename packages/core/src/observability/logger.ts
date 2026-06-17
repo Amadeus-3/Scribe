@@ -36,6 +36,7 @@ export const REDACT_PATHS: string[] = [
   'INNGEST_SIGNING_KEY',
   'INNGEST_EVENT_KEY',
   'EMAIL_SERVER',
+  'GSC_SERVICE_ACCOUNT_JSON',
   // Domain secrets
   'cmsCredentials',
   '*.cmsCredentials',
@@ -43,6 +44,11 @@ export const REDACT_PATHS: string[] = [
   '*.credentialsEnc',
   'cmsCredentialsEnc',
   '*.cmsCredentialsEnc',
+  // Service-account key material
+  'private_key',
+  '*.private_key',
+  'client_email',
+  '*.client_email',
 ];
 
 export interface CreateLoggerOptions {
