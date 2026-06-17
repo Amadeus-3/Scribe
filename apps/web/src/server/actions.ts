@@ -14,10 +14,13 @@ import {
   addKeywords,
   deleteKeyword,
   upsertStyleGuide,
+  runSiteDiscovery,
+  setGscServiceAccount,
   getSettingsForActor,
   updateSetting,
   parseKeywordSeedList,
   parseBannedPhrases,
+  parseTopicLines,
   AuthorizationError,
   OpenRouterError,
   StyleGuideSuggestionError,
@@ -103,6 +106,8 @@ export async function createSiteAction(_prev: FormState, formData: FormData): Pr
       cmsType: str(formData.get('cmsType')) === 'WORDPRESS' ? 'WORDPRESS' : 'STRAPI',
       defaultAuthor: optStr(formData.get('defaultAuthor')),
       briefAutoApprove: formData.get('briefAutoApprove') === 'on',
+      gscPropertyUrl: optStr(formData.get('gscPropertyUrl')),
+      discoveryEnabled: formData.get('discoveryEnabled') === 'on',
     });
     revalidatePath('/sites');
     return { ok: true, message: 'Site created.' };
@@ -121,6 +126,8 @@ export async function updateSiteAction(_prev: FormState, formData: FormData): Pr
       cmsType: str(formData.get('cmsType')) === 'STRAPI' ? 'STRAPI' : 'WORDPRESS',
       defaultAuthor: optStr(formData.get('defaultAuthor')),
       briefAutoApprove: formData.get('briefAutoApprove') === 'on',
+      gscPropertyUrl: optStr(formData.get('gscPropertyUrl')),
+      discoveryEnabled: formData.get('discoveryEnabled') === 'on',
     });
     revalidatePath(`/sites/${id}`);
     revalidatePath('/sites');
@@ -245,6 +252,46 @@ export async function deleteKeywordAction(formData: FormData): Promise<void> {
   revalidatePath(`/sites/${siteId}`);
 }
 
+export async function discoverKeywordsAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const siteId = str(formData.get('siteId'));
+    const result = await runSiteDiscovery(prisma, actor, siteId);
+    revalidatePath(`/sites/${siteId}`);
+    const sourcesNote =
+      Object.entries(result.bySource)
+        .map(([source, n]) => `${source.replaceAll('_', ' ')}: ${n}`)
+        .join(', ') || 'no sources active';
+    const errorNote = result.errors.length > 0 ? ` (${result.errors.length} source error[s])` : '';
+    return {
+      ok: true,
+      message: `Discovered ${result.candidates} candidate${result.candidates === 1 ? '' : 's'}; queued ${result.created} new (${sourcesNote})${errorNote}.`,
+    };
+  } catch (e) {
+    if (e instanceof OpenRouterError || e instanceof ArticleDraftError) {
+      return { ok: false, error: e.message };
+    }
+    return toState('keywords.discover', e);
+  }
+}
+
+export async function setGscServiceAccountAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    await setGscServiceAccount(prisma, actor, str(formData.get('serviceAccountJson')));
+    revalidatePath('/settings');
+    return { ok: true, message: 'Google Search Console key saved (encrypted).' };
+  } catch (e) {
+    return toState('gsc.credentials.update', e);
+  }
+}
+
 export async function upsertStyleGuideAction(
   _prev: FormState,
   formData: FormData,
@@ -262,6 +309,10 @@ export async function upsertStyleGuideAction(
       formattingRules: optStr(formData.get('formattingRules')),
       readingLevel: optStr(formData.get('readingLevel')),
       bannedPhrases: parseBannedPhrases(str(formData.get('bannedPhrases'))),
+      topicPillars: parseTopicLines(str(formData.get('topicPillars'))),
+      topicClusters: parseTopicLines(str(formData.get('topicClusters'))),
+      excludedTopics: parseTopicLines(str(formData.get('excludedTopics'))),
+      geo: optStr(formData.get('geo')),
     });
     revalidatePath(`/sites/${siteId}`);
     return { ok: true, message: 'Style guide saved.' };
@@ -682,6 +733,12 @@ export async function updateSettingsAction(
         model: imageModel,
       });
     }
+    await updateSetting(
+      prisma,
+      actor,
+      'discovery_cron_enabled',
+      formData.get('discovery_cron_enabled') === 'on',
+    );
     revalidatePath('/settings');
     return { ok: true, message: 'Settings saved.' };
   } catch (e) {

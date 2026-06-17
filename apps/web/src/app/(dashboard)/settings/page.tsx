@@ -1,6 +1,7 @@
 import {
   prisma,
   getGeminiCredentialSummary,
+  getGscCredentialSummary,
   getOpenRouterCredentialSummary,
   getSettingsForActor,
   can,
@@ -12,6 +13,7 @@ import {
   updateSettingsAction,
   setGeminiApiKeyAction,
   setOpenRouterApiKeyAction,
+  setGscServiceAccountAction,
   syncOpenRouterModelsAction,
 } from '@/server/actions';
 
@@ -26,6 +28,7 @@ export default async function SettingsPage() {
   const settings = await getSettingsForActor(prisma, actor);
   const openRouterCredential = await getOpenRouterCredentialSummary(prisma, actor);
   const geminiCredential = await getGeminiCredentialSummary(prisma, actor);
+  const gscCredential = await getGscCredentialSummary(prisma, actor);
   const canEdit = can(actor.role, 'settings.update');
   const modelCatalog = settings.openrouter.modelCatalog;
   const catalogSyncedAt = settings.openrouter.modelCatalogSyncedAt
@@ -135,6 +138,15 @@ export default async function SettingsPage() {
                 </select>
               </Field>
             </div>
+            <label className="mt-1 flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                name="discovery_cron_enabled"
+                defaultChecked={settings.discovery_cron_enabled}
+                disabled={!canEdit}
+              />{' '}
+              Enable the weekly trending-topic discovery cron (only runs for sites opted in)
+            </label>
           </ActionForm>
         </Card>
 
@@ -213,6 +225,51 @@ export default async function SettingsPage() {
                     required
                     className={inputClass}
                     autoComplete="off"
+                  />
+                </Field>
+              </ActionForm>
+            ) : null}
+          </Card>
+
+          <Card
+            title="Google Search Console"
+            description="Service-account JSON (read-only) for trending-topic discovery. Add the service account's email as a user on each GSC property."
+          >
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Status</span>
+                <Badge tone={gscCredential.configured ? 'ok' : 'muted'}>
+                  {gscCredential.configured ? 'configured' : 'not set'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Stored key</span>
+                <span>{gscCredential.hasStoredKey ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Env fallback</span>
+                <span>{gscCredential.hasEnvFallback ? 'Yes' : 'No'}</span>
+              </div>
+            </div>
+            {canEdit ? (
+              <ActionForm
+                action={setGscServiceAccountAction}
+                submitLabel="Save service account"
+                className="mt-3 border-t border-border pt-3"
+              >
+                <Field
+                  label="Service-account JSON"
+                  name="serviceAccountJson"
+                  hint="Paste the full JSON key. Stored encrypted; never returned to the browser."
+                >
+                  <textarea
+                    id="serviceAccountJson"
+                    name="serviceAccountJson"
+                    required
+                    rows={5}
+                    className={`${inputClass} font-mono text-xs`}
+                    autoComplete="off"
+                    placeholder='{ "type": "service_account", "client_email": "...", "private_key": "..." }'
                   />
                 </Field>
               </ActionForm>
