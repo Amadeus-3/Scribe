@@ -11,7 +11,7 @@ import {
   type SiteTaxonomyDTO,
 } from '@scribe/core';
 import { requireActor } from '@/lib/session';
-import { PageHeader, Card, Field, Badge, inputClass } from '@/components/ui';
+import { PageHeader, Card, Field, Badge, StatusBadge, buttonClass, inputClass } from '@/components/ui';
 import { SeoScoreCard } from '@/components/seo-score-card';
 import { InlineImagesCard } from '@/components/inline-images-card';
 import { TaxonomyFields } from '@/components/taxonomy-fields';
@@ -64,9 +64,9 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
         description={article.slug ?? undefined}
         actions={
           <>
-            <Badge tone="muted">{article.status}</Badge>
+            <StatusBadge status={article.status} />
             {site ? (
-              <Link href={`/sites/${site.id}`} className="text-sm text-muted hover:text-fg">
+              <Link href={`/sites/${site.id}`} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
                 Back to site
               </Link>
             ) : null}
@@ -145,7 +145,10 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
         </Card>
 
         <div className="grid content-start gap-4">
-          <Card title="Review actions">
+          <Card
+            title="Review actions"
+            description="Approve the draft when the article, metadata, taxonomy, and image prompt are ready."
+          >
             <div className="grid gap-3">
               {canApprove ? (
                 <ActionForm action={approveArticleAction} submitLabel="Approve">
@@ -153,7 +156,11 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
                 </ActionForm>
               ) : null}
               {canRequestChanges ? (
-                <ActionForm action={requestArticleChangesAction} submitLabel="Request changes">
+                <ActionForm
+                  action={requestArticleChangesAction}
+                  submitLabel="Request changes"
+                  submitVariant="secondary"
+                >
                   <input type="hidden" name="id" value={article.id} />
                   <Field label="Reason" name="reason" hint="Optional">
                     <textarea id="reason" name="reason" rows={3} className={inputClass} />
@@ -161,7 +168,7 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
                 </ActionForm>
               ) : null}
               {canReject ? (
-                <ActionForm action={rejectArticleAction} submitLabel="Reject">
+                <ActionForm action={rejectArticleAction} submitLabel="Reject" submitVariant="danger">
                   <input type="hidden" name="id" value={article.id} />
                   <Field label="Reason" name="reason" hint="Optional">
                     <textarea id="reason" name="reason" rows={3} className={inputClass} />
@@ -255,7 +262,7 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
 
           <Card
             title="Publishing"
-            description="Approved articles can be sent to the configured Strapi collection. If the site is set to draft mode, publish it in Strapi before it appears publicly."
+            description="Approved articles are sent to the configured Strapi collection. Public vs draft behavior is controlled on the site CMS settings."
           >
             <dl className="grid gap-2 text-sm">
               <div>

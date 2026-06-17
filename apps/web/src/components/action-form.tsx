@@ -2,6 +2,7 @@
 
 import { useActionState, type ReactNode } from 'react';
 import type { FormState } from '@/server/actions';
+import { buttonClass } from '@/components/ui';
 
 const initial: FormState = { ok: false };
 
@@ -14,12 +15,14 @@ export function ActionForm({
   action,
   children,
   submitLabel = 'Save',
+  submitVariant = 'primary',
   className,
   encType,
 }: {
   action: (prev: FormState, fd: FormData) => Promise<FormState>;
   children: ReactNode;
   submitLabel?: string;
+  submitVariant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   className?: string;
   encType?: 'multipart/form-data';
 }) {
@@ -27,17 +30,23 @@ export function ActionForm({
   return (
     <form action={formAction} className={className} encType={encType}>
       <div className="grid gap-3">{children}</div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className={buttonClass({ variant: submitVariant })}
         >
-          {pending ? 'Saving…' : submitLabel}
+          {pending ? 'Working...' : submitLabel}
         </button>
-        {state.error ? <span className="text-xs text-danger">{state.error}</span> : null}
+        {state.error ? (
+          <span className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs leading-5 text-danger">
+            {state.error}
+          </span>
+        ) : null}
         {state.ok && state.message ? (
-          <span className="text-xs text-ok">{state.message}</span>
+          <span className="rounded-md border border-ok/30 bg-ok/10 px-2.5 py-1.5 text-xs leading-5 text-ok">
+            {state.message}
+          </span>
         ) : null}
       </div>
     </form>
