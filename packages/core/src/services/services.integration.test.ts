@@ -30,6 +30,8 @@ import {
 } from './site-service';
 import { upsertStyleGuide } from './style-guide-service';
 import { addKeywords, deleteKeyword, listKeywords } from './keyword-service';
+import { enqueueDiscoveredKeywords, runSiteDiscovery } from './keyword-discovery-service';
+import type { KeywordSource } from '../keyword-sources/types';
 import { getSettingsForActor, updateSetting } from './settings-service';
 import {
   getGeminiApiKey,
@@ -1109,5 +1111,67 @@ describe('provider credentials', () => {
     await expect(getGeminiApiKeyForImageGeneration(db, editor)).resolves.toBe('gemini-secret');
     await expect(setOpenRouterApiKey(db, editor, 'x')).rejects.toThrow(AuthorizationError);
     await expect(setGeminiApiKey(db, editor, 'x')).rejects.toThrow(AuthorizationError);
+  });
+});
+
+describe('keyword discovery (Phase 6)', () => {
+  it('enqueues discovered keywords with provenance and dedupes vs existing', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await addKeywords(db, admin, { siteId: site.id, terms: ['existing term'] });
+
+    const result = await enqueueDiscoveredKeywords(db, admin, {
+      siteId: site.id,
+      keywords: [
+        {
+          term: 'new trending topic',
+          source: 'google_trends',
+          score: 0.8,
+          metadata: { kind: 'google_trends', relevance: 0.8 },
+        },
+        { term: 'Existing Term', source: 'llm_web', score: 0.9 }, // dup (case-insensitive)
+      ],
+    });
+
+    expect(result.created).toBe(1);
+    expect(result.skipped).toBe(1);
+
+    const kws = await listKeywords(db, admin, site.id);
+    const found = kws.find((k) => k.term === 'new trending topic');
+    expect(found?.source).toBe('google_trends');
+    expect(found?.discoveryScore).toBeCloseTo(0.8, 5);
+    expect(found?.priority).toBe(80);
+    expect(found?.status).toBe('QUEUED');
+    expect(await auditCount('keywords.discovered')).toBe(1);
+  });
+
+  it('runs discovery sources end-to-end and queues the results', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+      topicPillars: ['home espresso'],
+      geo: 'us',
+    });
+
+    const mockSource: KeywordSource = {
+      id: 'llm_web',
+      isEnabled: () => true,
+      discover: async () => [{ term: 'discovered topic', source: 'llm_web', score: 0.7 }],
+    };
+
+    const result = await runSiteDiscovery(db, admin, site.id, {
+      sources: [mockSource],
+      fetchFn: async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => ({}), text: async () => '' }),
+    });
+
+    expect(result.created).toBe(1);
+    expect(result.candidates).toBe(1);
+    const kws = await listKeywords(db, admin, site.id);
+    expect(kws.some((k) => k.term === 'discovered topic' && k.source === 'llm_web')).toBe(true);
+
+    // Topic fields persisted on the style guide.
+    const guide = await db.styleGuide.findUnique({ where: { siteId: site.id } });
+    expect(guide?.topicPillars).toEqual(['home espresso']);
+    expect(guide?.geo).toBe('US');
   });
 });

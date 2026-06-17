@@ -21,6 +21,9 @@ export const SettingsSchema = z.object({
   briefs_per_run: z.number().int().positive().default(5),
   max_regen: z.number().int().nonnegative().default(2),
 
+  // Trending-topic discovery: opt-in weekly cron (per-site flag also required).
+  discovery_cron_enabled: z.boolean().default(false),
+
   // Model selection (Spec §7.2)
   models: z
     .object({

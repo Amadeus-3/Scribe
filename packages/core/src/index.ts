@@ -25,9 +25,19 @@ export * from './domain/keyword';
 
 // AI providers
 export * from './ai/openrouter';
+export * from './ai/openrouter-chat';
 export * from './ai/gemini-image';
 export * from './ai/style-guide-suggester';
 export * from './ai/article-drafter';
+
+// Trending-topic discovery (pluggable keyword sources)
+export * from './keyword-sources/types';
+export * from './keyword-sources/site-topics';
+export * from './keyword-sources/run-discovery';
+export * from './keyword-sources/sources';
+export * from './keyword-sources/gsc-source';
+export * from './keyword-sources/trends-rss-source';
+export * from './keyword-sources/llm-web-source';
 
 // Public site context
 export * from './site-context/public-site-context';
@@ -47,6 +57,7 @@ export * from './services/keyword-service';
 export * from './services/article-service';
 export * from './services/settings-service';
 export * from './services/provider-credential-service';
+export * from './services/keyword-discovery-service';
 
 // Database access + generated Prisma types and enums
 export type { Db } from './db/types';
