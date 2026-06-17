@@ -138,6 +138,10 @@ model Site {
   defaultAuthor     String? // CMS author/username to attribute posts to
   status            SiteStatus  @default(ACTIVE)
   briefAutoApprove  Boolean     @default(true)
+  // Google Search Console property id, e.g. "sc-domain:example.com" (non-secret).
+  gscPropertyUrl    String?
+  // Opt this site into the optional weekly trending-topic discovery cron.
+  discoveryEnabled  Boolean     @default(false)
   styleGuide        StyleGuide?
   keywords          Keyword[]
   articles          Article[]
@@ -157,6 +161,11 @@ model StyleGuide {
   formattingRules         String?
   readingLevel            String? // e.g. "Grade 8"
   bannedPhrases           Json? // string[]
+  // Structured niche for trending-topic discovery (validated by SiteTopicsSchema).
+  topicPillars            Json? // string[] — primary niche pillars
+  topicClusters           Json? // string[] — supporting subtopics
+  excludedTopics          Json? // string[] — off-niche / brand-safety deny list
+  geo                     String? // ISO country (e.g. "US") for Trends/geo scoping
   updatedAt               DateTime @updatedAt
 }
 
@@ -170,12 +179,17 @@ model Keyword {
   difficulty   Int?
   priority     Int           @default(0)
   status       KeywordStatus @default(QUEUED)
+  // Provenance of how this keyword entered the queue (KeywordSourceId).
+  source         String? // e.g. "manual_seed" | "google_search_console" | "google_trends" | "llm_web"
+  discoveryScore Float? // 0..1 blended ranking score (distinct from human-set `priority`)
+  sourceMetadata Json? // per-source rationale ("why queued"), validated before write
   sourcedAt    DateTime      @default(now())
   brief        Brief?
   article      Article?
 
   @@unique([siteId, term])
   @@index([siteId, status])
+  @@index([siteId, source])
 }
 
 model Brief {
