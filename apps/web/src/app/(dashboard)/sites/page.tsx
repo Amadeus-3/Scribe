@@ -95,7 +95,10 @@ export default async function SitesPage() {
           </Card>
 
           {canCreate ? (
-            <Card title="Add a site" description="Use Strapi for a Next.js blog backed by Strapi CMS.">
+            <Card
+              title="Add a site"
+              description="Just the basics here. You'll connect CMS credentials, write the style guide, and add keywords on the site's page next."
+            >
               <ActionForm action={createSiteAction} submitLabel="Create site">
                 <Field label="Name" name="name">
                   <input id="name" name="name" required className={inputClass} />
