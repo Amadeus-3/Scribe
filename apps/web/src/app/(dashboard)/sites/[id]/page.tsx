@@ -597,7 +597,11 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
             <div className="grid gap-3">
               <ActionForm action={addKeywordsAction} submitLabel="Add keywords">
                 <input type="hidden" name="siteId" value={site.id} />
-                <Field label="Seed list" name="terms" hint="One keyword per line; duplicates skipped">
+                <Field
+                  label="Seed list"
+                  name="terms"
+                  hint="One per line or comma-separated; duplicates skipped"
+                >
                   <textarea id="terms" name="terms" rows={3} className={inputClass} />
                 </Field>
               </ActionForm>
