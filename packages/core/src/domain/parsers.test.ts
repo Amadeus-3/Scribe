@@ -18,6 +18,11 @@ describe('parseKeywordSeedList', () => {
   it('returns empty for blank input', () => {
     expect(parseKeywordSeedList('\n   \n')).toEqual([]);
   });
+  it('splits comma-separated lines into individual keywords', () => {
+    expect(
+      parseKeywordSeedList('money mindset, financial freedom\nbudgeting, money mindset'),
+    ).toEqual(['money mindset', 'financial freedom', 'budgeting']);
+  });
 });
 
 describe('parseBannedPhrases', () => {
