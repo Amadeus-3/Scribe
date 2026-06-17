@@ -19,7 +19,9 @@ services:
       POSTGRES_PASSWORD: scribe
       POSTGRES_DB: scribe
     ports:
-      - '5432:5432'
+      # Host port 5433 (container stays 5432) so Scribe's DB coexists with other
+      # local Postgres stacks (e.g. the wisely-rich project) that use host 5432.
+      - '5433:5432'
     volumes:
       - scribe_pgdata:/var/lib/postgresql/data
     healthcheck:
