@@ -89,6 +89,33 @@ export function Field({ label, name, hint, children }: {
   );
 }
 
+export function Disclosure({
+  summary,
+  hint,
+  defaultOpen = false,
+  children,
+}: {
+  summary: string;
+  hint?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} className="group rounded-md border border-border bg-panel-2/40">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
+        <span>
+          {summary}
+          {hint ? <span className="ml-2 text-xs font-normal text-muted">{hint}</span> : null}
+        </span>
+        <span aria-hidden className="text-xs text-muted transition-transform group-open:rotate-180">
+          ▾
+        </span>
+      </summary>
+      <div className="grid gap-3 border-t border-border p-3">{children}</div>
+    </details>
+  );
+}
+
 export function Badge({ children, tone = 'default' }: {
   children: ReactNode;
   tone?: 'default' | 'ok' | 'warn' | 'danger' | 'muted';

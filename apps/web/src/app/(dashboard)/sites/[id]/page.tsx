@@ -15,6 +15,7 @@ import {
   Card,
   Field,
   Badge,
+  Disclosure,
   EmptyState,
   StatusBadge,
   StepList,
@@ -78,6 +79,44 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
         }
       />
 
+      <Card
+        title="Set up this site"
+        description="Finish these to start generating and publishing articles."
+        className="mb-4"
+      >
+        <StepList
+          steps={[
+            { label: '1. Site details', description: `${site.cmsType} CMS · ${site.baseUrl}`, done: true },
+            {
+              label: '2. Connect the CMS',
+              description: site.hasCredentials
+                ? 'Credentials saved.'
+                : 'Add the API token + URL below.',
+              done: site.hasCredentials,
+            },
+            {
+              label: '3. Style guide',
+              description: guide ? 'Saved — used for every draft.' : 'Use “Suggest with AI”, then save.',
+              done: Boolean(guide),
+            },
+            {
+              label: '4. Add keywords',
+              description:
+                keywords.length > 0
+                  ? `${keywords.length} in the queue.`
+                  : 'Seed a few, or “Discover trending topics”.',
+              done: keywords.length > 0,
+            },
+            {
+              label: '5. Generate an article',
+              description:
+                articles.length > 0 ? `${articles.length} draft(s).` : 'Pick a keyword and generate.',
+              done: articles.length > 0,
+            },
+          ]}
+        />
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         {canEdit ? (
           <Card title="Details" description="Public website settings and CMS type.">
@@ -121,19 +160,6 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
-              <Field
-                label="GSC property"
-                name="gscPropertyUrl"
-                hint="Google Search Console property, e.g. sc-domain:example.com or https://example.com/"
-              >
-                <input
-                  id="gscPropertyUrl"
-                  name="gscPropertyUrl"
-                  defaultValue={site.gscPropertyUrl ?? ''}
-                  placeholder="sc-domain:example.com"
-                  className={inputClass}
-                />
-              </Field>
               <label className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-sm">
                 <input
                   type="checkbox"
@@ -142,14 +168,33 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                 />{' '}
                 Auto-approve briefs
               </label>
-              <label className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  name="discoveryEnabled"
-                  defaultChecked={site.discoveryEnabled}
-                />{' '}
-                Include in weekly trending-topic discovery
-              </label>
+              <Disclosure
+                summary="Trending-topic discovery"
+                hint="optional"
+                defaultOpen={Boolean(site.gscPropertyUrl) || site.discoveryEnabled}
+              >
+                <Field
+                  label="Google Search Console property"
+                  name="gscPropertyUrl"
+                  hint="e.g. sc-domain:example.com or https://example.com/"
+                >
+                  <input
+                    id="gscPropertyUrl"
+                    name="gscPropertyUrl"
+                    defaultValue={site.gscPropertyUrl ?? ''}
+                    placeholder="sc-domain:example.com"
+                    className={inputClass}
+                  />
+                </Field>
+                <label className="flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="discoveryEnabled"
+                    defaultChecked={site.discoveryEnabled}
+                  />{' '}
+                  Include in the weekly auto-discovery run
+                </label>
+              </Disclosure>
             </ActionForm>
             <form action={setSiteStatusAction} className="mt-3 border-t border-border pt-3">
               <input type="hidden" name="id" value={site.id} />
@@ -164,36 +209,6 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
             </form>
           </Card>
         ) : null}
-
-        <Card title="Setup flow">
-          <StepList
-            steps={[
-              {
-                label: 'Site details',
-                description: `${site.cmsType} article CMS selected.`,
-                done: true,
-              },
-              {
-                label: 'CMS credentials',
-                description: site.hasCredentials ? 'Credentials saved.' : 'Credentials still need to be saved.',
-                done: site.hasCredentials,
-              },
-              {
-                label: 'Style guide',
-                description: guide ? 'Context is saved for future drafts.' : 'Generate or write site context.',
-                done: Boolean(guide),
-              },
-              {
-                label: 'Article draft',
-                description:
-                  articles.length > 0
-                    ? `${articles.length} draft/article records exist.`
-                    : 'Generate from a keyword below.',
-                done: articles.length > 0,
-              },
-            ]}
-          />
-        </Card>
 
         {canCreds && credentialSummary?.cmsType === 'WORDPRESS' ? (
           <Card
@@ -300,6 +315,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />
                 </Field>
               </div>
+              <Disclosure summary="Field mapping" hint="defaults fit a standard Strapi blog">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Title field" name="fieldMap.title">
                   <input
@@ -383,6 +399,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />
                 </Field>
               </div>
+              </Disclosure>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Content format" name="contentFormat">
                   <select
@@ -477,6 +494,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
+              <Disclosure summary="Voice, formatting & banned phrases" hint="optional">
               <Field label="Image prompt instructions" name="imagePromptInstructions">
                 <textarea
                   id="imagePromptInstructions"
@@ -521,11 +539,11 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
-              <div className="border-t border-border pt-3">
-                <div className="text-xs font-medium text-muted">
-                  Discovery topics — used to target trending-topic discovery to this site&apos;s niche.
-                </div>
-              </div>
+              </Disclosure>
+              <Disclosure
+                summary="Trending-topic discovery"
+                hint="optional — targets discovery to this niche"
+              >
               <Field label="Topic pillars" name="topicPillars" hint="Primary niche topics, one per line">
                 <textarea
                   id="topicPillars"
@@ -566,6 +584,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
+              </Disclosure>
             </ActionForm>
           </Card>
         ) : null}
@@ -622,10 +641,10 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                       ) : null}
                     </span>
                     {can(actor.role, 'keyword.delete') ? (
-                      <form action={deleteKeywordAction}>
+                      <form action={deleteKeywordAction} className="shrink-0">
                         <input type="hidden" name="id" value={k.id} />
                         <input type="hidden" name="siteId" value={site.id} />
-                        <button className="text-xs text-muted hover:text-danger">Remove</button>
+                        <button className={buttonClass({ variant: 'ghost', size: 'sm' })}>Remove</button>
                       </form>
                     ) : null}
                   </li>
