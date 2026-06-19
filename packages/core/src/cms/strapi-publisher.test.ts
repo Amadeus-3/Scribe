@@ -238,4 +238,57 @@ describe('publishToStrapi', () => {
     );
     expect(result.cmsPostId).toBe('doc_123');
   });
+
+  it('sends media fileInfo (clean name + alt text) for cover and in-body images', async () => {
+    const articleWithImages: StrapiArticleInput = {
+      ...article,
+      image: {
+        mimeType: 'image/png',
+        dataBase64: 'aW1hZ2U=',
+        filename: 'how-to-budget.png',
+        alt: 'How to Budget hero',
+      },
+      contentMarkdown: '# How to Budget\n\n## Saving',
+      inlineImages: [
+        {
+          mimeType: 'image/png',
+          dataBase64: 'aW5saW5l',
+          filename: 'how-to-budget-inline-0.png',
+          alt: 'A jar of coins labelled savings',
+          placement: 'Saving',
+        },
+      ],
+    };
+
+    const ok = (json: unknown) => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '',
+      json: async () => json,
+    });
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(ok([{ id: 10, url: '/uploads/cover.png' }])) // cover upload
+      .mockResolvedValueOnce(ok([{ id: 11, url: '/uploads/inline.png' }])) // in-body upload
+      .mockResolvedValueOnce(ok({ data: { id: 7, documentId: 'doc_123', slug: 'how-to-budget' } }));
+
+    await publishToStrapi({
+      baseUrl: 'https://public.example.com',
+      credentials,
+      article: articleWithImages,
+      fetchFn,
+    });
+
+    const coverForm = fetchFn.mock.calls[0]?.[1]?.body as FormData;
+    const inlineForm = fetchFn.mock.calls[1]?.[1]?.body as FormData;
+    expect(JSON.parse(coverForm.get('fileInfo') as string)).toEqual({
+      name: 'how-to-budget',
+      alternativeText: 'How to Budget hero',
+    });
+    expect(JSON.parse(inlineForm.get('fileInfo') as string)).toEqual({
+      name: 'how-to-budget-inline-0',
+      alternativeText: 'A jar of coins labelled savings',
+    });
+  });
 });

@@ -6,6 +6,7 @@ import { recordAudit } from '../audit/audit-log';
 import { decryptSecret } from '../crypto/encryption';
 import { getSettings } from '../domain/settings';
 import { parseKeywordSeedList } from '../domain/keyword';
+import { buildArticleUrl, stripDisallowedInternalLinks } from '../domain/internal-links';
 import { CmsCredentialsSchema, type CmsCredentials } from '../domain/site';
 import {
   draftArticleWithOpenRouter,
@@ -44,6 +45,9 @@ export interface ArticleDTO {
   llmModel: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** AI regeneration count. Bumps only on regenerate (not on manual save) — the
+   * editor keys on it to reload regenerated content into its uncontrolled fields. */
+  regenAttempts: number;
 }
 
 export interface ArticleImageDTO {
@@ -158,6 +162,7 @@ function toArticleDTO(article: Article & { keyword?: { term: string } | null }):
     llmModel: article.llmModel,
     createdAt: article.createdAt,
     updatedAt: article.updatedAt,
+    regenAttempts: article.regenAttempts,
   };
 }
 
@@ -289,6 +294,8 @@ function buildSeoReport(args: {
   keyword: string;
   bannedPhrases: string[];
   inlineImageCount: number;
+  /** Number of other published posts available to link to — drives the internal-link check. */
+  internalLinkCandidates?: number;
 }): SeoReport {
   return scoreArticleSeo({
     title: args.title ?? '',
@@ -299,6 +306,36 @@ function buildSeoReport(args: {
     primaryKeyword: args.keyword,
     bannedPhrases: args.bannedPhrases,
     inlineImageCount: args.inlineImageCount,
+    internalLinkCandidates: args.internalLinkCandidates,
+  });
+}
+
+/**
+ * The site's existing published posts a draft may link to, with correct public
+ * URLs ({baseUrl}{articlePathPrefix}/{slug}). Excludes the article being
+ * (re)generated so it never links to itself. These are the ONLY valid internal
+ * link targets — the model is given this list and any other internal link the
+ * output contains is stripped (see stripDisallowedInternalLinks).
+ */
+async function listInternalLinkTargets(
+  db: PrismaClient,
+  site: { id: string; baseUrl: string; articlePathPrefix: string | null },
+  excludeArticleId?: string,
+): Promise<Array<{ title: string; url: string }>> {
+  const posts = await db.article.findMany({
+    where: {
+      siteId: site.id,
+      status: 'PUBLISHED',
+      slug: { not: null },
+      ...(excludeArticleId ? { id: { not: excludeArticleId } } : {}),
+    },
+    select: { title: true, slug: true },
+    orderBy: { updatedAt: 'desc' },
+    take: 50,
+  });
+  return posts.flatMap((post) => {
+    const url = post.slug ? buildArticleUrl(site.baseUrl, site.articlePathPrefix, post.slug) : null;
+    return url && post.title ? [{ title: post.title, url }] : [];
   });
 }
 
@@ -485,6 +522,7 @@ export async function suggestArticleInlineImages(
     return [];
   }
 
+  const internalLinkCandidates = (await listInternalLinkTargets(db, article.site, id)).length;
   const seoReport = buildSeoReport({
     title: article.title,
     slug: article.slug,
@@ -494,6 +532,7 @@ export async function suggestArticleInlineImages(
     keyword: article.keyword.term,
     bannedPhrases: coerceBannedPhrases(article.site.styleGuide?.bannedPhrases),
     inlineImageCount: suggestions.length,
+    internalLinkCandidates,
   });
 
   const images = await db.$transaction(async (tx) => {
@@ -607,6 +646,10 @@ export async function generateArticleDraft(
     taxonomy = null;
   }
 
+  // Real internal-link targets (existing published posts) — the only ones the
+  // model may link to; anything else it writes is stripped below.
+  const internalLinks = await listInternalLinkTargets(db, site);
+
   const model = settings.models.draft;
   const draft = await draftArticleWithOpenRouter({
     apiKey: options.apiKey,
@@ -617,7 +660,15 @@ export async function generateArticleDraft(
     instructions: input.instructions,
     styleGuide,
     taxonomy: taxonomy ?? undefined,
+    internalLinks,
     fetchFn: options.fetchFn,
+  });
+
+  // Hard guarantee: drop any internal link the model invented (only allowlisted
+  // published posts survive) so the article never references a page that 404s.
+  draft.contentMarkdown = stripDisallowedInternalLinks(draft.contentMarkdown, {
+    siteBaseUrl: site.baseUrl,
+    allowedUrls: internalLinks.map((link) => link.url),
   });
 
   // Keep only choices that match an existing slug (no hallucinated/auto-created taxonomy).
@@ -638,6 +689,7 @@ export async function generateArticleDraft(
     keyword,
     bannedPhrases: coerceBannedPhrases(styleGuide.bannedPhrases),
     inlineImageCount: draft.inlineImages.length,
+    internalLinkCandidates: internalLinks.length,
   });
 
   const article = await createDraftRecords(
@@ -761,6 +813,7 @@ export async function updateArticleKeyword(
     throw new Error('Another keyword with that term already exists for this site.');
   }
 
+  const internalLinkCandidates = (await listInternalLinkTargets(db, article.site, id)).length;
   const seoReport = buildSeoReport({
     title: article.title,
     slug: article.slug,
@@ -770,6 +823,7 @@ export async function updateArticleKeyword(
     keyword: term,
     bannedPhrases: coerceBannedPhrases(article.site.styleGuide?.bannedPhrases),
     inlineImageCount: article._count.images,
+    internalLinkCandidates,
   });
 
   const updated = await db.$transaction(async (tx) => {
@@ -820,6 +874,7 @@ export async function updateArticleDraft(
     const nextSlug = input.slug ? normalizeSlug(input.slug) : current.slug;
     const nextMeta = input.metaDescription?.trim() || null;
     const nextImagePrompt = input.imagePrompt?.trim() || null;
+    const internalLinkCandidates = (await listInternalLinkTargets(db, current.site, id)).length;
     const seoReport = buildSeoReport({
       title: input.title.trim(),
       slug: nextSlug,
@@ -829,6 +884,7 @@ export async function updateArticleDraft(
       keyword: current.keyword.term,
       bannedPhrases: coerceBannedPhrases(current.site.styleGuide?.bannedPhrases),
       inlineImageCount: current._count.images,
+      internalLinkCandidates,
     });
     const article = await tx.article.update({
       where: { id },
@@ -920,6 +976,8 @@ export async function regenerateArticleDraft(
   const model = settings.models.draft;
   const bannedPhrases = coerceBannedPhrases(styleGuide.bannedPhrases);
   const inlineImageCount = article._count.images;
+  // Real internal-link targets (other published posts), excluding this article.
+  const internalLinks = await listInternalLinkTargets(db, article.site, id);
 
   // Derive concrete SEO issues from the stored report, or score the current
   // content if it was never scored, so the model always gets actionable fixes.
@@ -934,6 +992,7 @@ export async function regenerateArticleDraft(
       keyword: article.keyword.term,
       bannedPhrases,
       inlineImageCount,
+      internalLinkCandidates: internalLinks.length,
     });
   const seoIssues = baseReport.checks
     .filter((check) => check.status !== 'pass')
@@ -946,6 +1005,7 @@ export async function regenerateArticleDraft(
     siteUrl: article.site.baseUrl,
     keyword: article.keyword.term,
     styleGuide,
+    internalLinks,
     revision: {
       currentTitle: article.title,
       currentSlug: article.slug,
@@ -958,6 +1018,12 @@ export async function regenerateArticleDraft(
     fetchFn: options.fetchFn,
   });
 
+  // Hard guarantee: strip any invented internal link from the regenerated output.
+  draft.contentMarkdown = stripDisallowedInternalLinks(draft.contentMarkdown, {
+    siteBaseUrl: article.site.baseUrl,
+    allowedUrls: internalLinks.map((link) => link.url),
+  });
+
   const nextSlug = normalizeSlug(draft.slug);
   const seoReport = buildSeoReport({
     title: draft.title,
@@ -968,6 +1034,7 @@ export async function regenerateArticleDraft(
     keyword: article.keyword.term,
     bannedPhrases,
     inlineImageCount,
+    internalLinkCandidates: internalLinks.length,
   });
 
   const updated = await db.$transaction(async (tx) => {
@@ -1234,6 +1301,8 @@ export async function publishArticleToCms(
                 mimeType: article.imageMimeType,
                 dataBase64: article.imageDataBase64,
                 filename: `${article.slug ?? article.id}.${article.imageMimeType.split('/')[1] ?? 'png'}`,
+                // No stored hero alt; the title is a concise, descriptive default.
+                alt: article.title,
               }
             : null,
         inlineImages,

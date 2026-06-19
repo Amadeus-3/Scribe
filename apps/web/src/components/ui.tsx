@@ -57,7 +57,7 @@ export function Card({ title, description, actions, className, children }: {
   children: ReactNode;
 }) {
   return (
-    <section className={clsx('rounded-lg border border-border bg-panel shadow-sm', className)}>
+    <section className={clsx('min-w-0 rounded-lg border border-border bg-panel shadow-sm', className)}>
       {title || description || actions ? (
         <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
@@ -69,7 +69,7 @@ export function Card({ title, description, actions, className, children }: {
           {actions ? <div className="shrink-0">{actions}</div> : null}
         </div>
       ) : null}
-      <div className="p-4">{children}</div>
+      <div className="min-w-0 p-4">{children}</div>
     </section>
   );
 }

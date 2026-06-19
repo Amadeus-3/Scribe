@@ -197,6 +197,35 @@ describe('scoreArticleSeo — in-body images', () => {
   });
 });
 
+describe('scoreArticleSeo — internal links (context-aware)', () => {
+  // goodArticle() links internally; strip that to get a no-internal-links variant.
+  function noInternalLinks(): ScoreArticleSeoInput {
+    const base = goodArticle();
+    return {
+      ...base,
+      contentMarkdown: base.contentMarkdown.replace(
+        'See our [pour-over brewing guide](/guides/pour-over) and the standards from [the SCA](https://example.com).',
+        'The standards here are widely documented across the specialty coffee industry.',
+      ),
+    };
+  }
+
+  it('passes (not applicable) when there are no other published posts to link to', () => {
+    const report = scoreArticleSeo({ ...noInternalLinks(), internalLinkCandidates: 0 });
+    expect(find(report, 'internal-links').status).toBe('pass');
+  });
+
+  it('does not pass when posts exist to link to but the article links to none', () => {
+    const report = scoreArticleSeo({ ...noInternalLinks(), internalLinkCandidates: 5 });
+    expect(find(report, 'internal-links').status).not.toBe('pass');
+  });
+
+  it('passes when the article links internally and posts exist', () => {
+    const report = scoreArticleSeo({ ...goodArticle(), internalLinkCandidates: 5 });
+    expect(find(report, 'internal-links').status).toBe('pass');
+  });
+});
+
 describe('scoreArticleSeo — long / headline keyword', () => {
   // Mirrors a real case where the stored "keyword" is actually the headline.
   const para =

@@ -2,6 +2,7 @@ import type { CmsType, PrismaClient, Site, SiteStatus } from '@prisma/client';
 import { authorize, type Actor } from '../auth/authorize';
 import { recordAudit } from '../audit/audit-log';
 import { encryptSecret, decryptSecret } from '../crypto/encryption';
+import { normalizeArticlePathPrefix } from '../domain/internal-links';
 import {
   CmsCredentialsSchema,
   LegacyWordPressCredentialsSchema,
@@ -20,6 +21,8 @@ export interface SiteDTO {
   id: string;
   name: string;
   baseUrl: string;
+  /** Public URL path prefix for posts (e.g. "/blog"); null = site root. */
+  articlePathPrefix: string | null;
   cmsType: CmsType;
   defaultAuthor: string | null;
   status: SiteStatus;
@@ -38,6 +41,7 @@ function toSiteDTO(site: Site): SiteDTO {
     id: site.id,
     name: site.name,
     baseUrl: site.baseUrl,
+    articlePathPrefix: site.articlePathPrefix,
     cmsType: site.cmsType,
     defaultAuthor: site.defaultAuthor,
     status: site.status,
@@ -118,6 +122,7 @@ export async function createSite(db: PrismaClient, actor: Actor, input: unknown)
       data: {
         name: data.name,
         baseUrl: data.baseUrl,
+        articlePathPrefix: normalizeArticlePathPrefix(data.articlePathPrefix) || null,
         cmsType: data.cmsType,
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
@@ -153,6 +158,7 @@ export async function updateSite(
       data: {
         name: data.name,
         baseUrl: data.baseUrl,
+        articlePathPrefix: normalizeArticlePathPrefix(data.articlePathPrefix) || null,
         cmsType: data.cmsType,
         ...(cmsTypeChanged ? { cmsCredentialsEnc: null } : {}),
         defaultAuthor: data.defaultAuthor ?? null,

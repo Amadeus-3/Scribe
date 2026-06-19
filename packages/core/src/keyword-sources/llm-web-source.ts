@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { callOpenRouterChat, extractJson } from '../ai/openrouter-chat';
-import { describeTopics } from './site-topics';
 import type { DiscoveredKeyword, DiscoveryContext, KeywordSource } from './types';
 
 /**
@@ -25,6 +24,8 @@ export const llmWebTrendSource: KeywordSource = {
   async discover(ctx: DiscoveryContext): Promise<DiscoveredKeyword[]> {
     const llm = ctx.llm;
     if (!llm) return [];
+    // No niche => skip rather than return generic, off-site topics.
+    if (!ctx.nicheDescription.trim()) return [];
 
     const content = await callOpenRouterChat({
       apiKey: llm.apiKey,
@@ -44,7 +45,7 @@ export const llmWebTrendSource: KeywordSource = {
           role: 'user',
           content: [
             `Website: ${ctx.site.name} (${ctx.site.baseUrl})`,
-            `Niche: ${describeTopics(ctx.topics)}`,
+            `Niche: ${ctx.nicheDescription}`,
             `Country: ${ctx.topics.geo}`,
             '',
             'Return JSON: {"items":[{"term":"concise article keyword","relevance":0..1,' +

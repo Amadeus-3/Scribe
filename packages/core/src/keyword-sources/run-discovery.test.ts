@@ -6,6 +6,7 @@ function ctx(excluded: string[] = []): DiscoveryContext {
   return {
     site: { id: 's1', name: 'Site', baseUrl: 'https://example.com', gscPropertyUrl: null },
     topics: { pillars: ['coffee'], clusters: [], excluded, geo: 'US' },
+    nicheDescription: 'Primary topics: coffee',
     now: new Date('2026-06-17T00:00:00Z'),
     fetchFn: async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => ({}), text: async () => '' }),
     logger: { warn: vi.fn() },

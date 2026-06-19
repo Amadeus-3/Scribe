@@ -121,6 +121,12 @@ export interface DiscoveryLogger {
 export interface DiscoveryContext {
   site: { id: string; name: string; baseUrl: string; gscPropertyUrl: string | null };
   topics: SiteTopics;
+  /**
+   * The niche the Trends + LLM-web sources search/filter against. Derived from
+   * the structured topics, falling back to the style guide's business context.
+   * Empty => those sources return nothing (rather than random macro trends).
+   */
+  nicheDescription: string;
   now: Date;
   fetchFn: DiscoveryFetch;
   resolveHost?: DiscoveryResolveHost;

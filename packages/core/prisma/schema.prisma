@@ -132,6 +132,10 @@ model Site {
   id                String      @id @default(cuid())
   name              String
   baseUrl           String
+  // Public URL path prefix for published posts, e.g. "/blog" → links resolve to
+  // {baseUrl}/blog/{slug}. Null/empty = posts live at the site root ({baseUrl}/{slug}).
+  // Used to build correct internal links to existing posts.
+  articlePathPrefix String?
   cmsType           CmsType     @default(WORDPRESS)
   // Encrypted at rest (Spec §10.3). Stores ciphertext + iv + tag, never plaintext.
   cmsCredentialsEnc String?

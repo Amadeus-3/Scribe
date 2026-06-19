@@ -70,7 +70,7 @@ export const SEO_DRAFTING_RULES = [
   '- Use a logical H2/H3 hierarchy that mirrors how the reader thinks; question/task-style headings where they match real searches. Do not add another H1 — the title is the only H1.',
   '- Place the primary keyword in the title, the first ~100 words, at least one H2, and the conclusion — only where it reads naturally. Cover related terms and entities for topical completeness; never keyword-stuff.',
   '- Use tables for comparisons, ordered lists for processes, bullet lists for sets — structured content is easier to scan and to lift into snippets.',
-  '- Suggest specific internal links (the pillar and adjacent cluster topics) as Markdown links with descriptive anchor text, even when the exact URL is unknown (use a relative path like /topic).',
+  "- Internal links: link ONLY to the existing posts provided to you, using each post's exact URL, and only where genuinely relevant. Never invent internal links, slugs, or relative paths, and never link to a page that was not provided — guessed internal links break. If no relevant existing post is provided, add no internal links.",
   '- Link out to authoritative primary sources for any factual, statistical, or current claim; never link to direct competitors.',
   '- E-E-A-T: be specific (steps, examples, numbers, decision rules, tradeoffs), add an original angle, include honest caveats, and never fabricate facts, statistics, prices, quotes, or studies.',
   '- End with a conclusion that restates the takeaway and gives a clear next step.',
@@ -136,12 +136,15 @@ export function buildArticleDraftMessages({
   instructions,
   styleGuide,
   taxonomy,
+  internalLinks,
   revision,
 }: {
   siteName: string;
   siteUrl: string;
   keyword: string;
   instructions?: string;
+  /** Existing published posts the model may link to (the only valid internal targets). */
+  internalLinks?: Array<{ title: string; url: string }>;
   styleGuide: {
     systemPrompt: string;
     businessContext?: string | null;
@@ -222,6 +225,11 @@ export function buildArticleDraftMessages({
         hasTags && taxonomy
           ? `Available tags (pick the 2–5 most relevant): ${formatOptions(taxonomy.tags)}`
           : null,
+        internalLinks && internalLinks.length > 0
+          ? `Existing posts you may link to (use the EXACT url, only where genuinely relevant; never invent or link to any other internal page):\n${internalLinks
+              .map((link) => `- ${link.title} — ${link.url}`)
+              .join('\n')}`
+          : 'This site has no other published posts to link to yet — do not add any internal links to other pages on this site.',
         '',
         revision
           ? 'Improve the EXISTING draft below into a stronger, complete, people-first SEO article for this site. Keep what already works, fix every listed SEO issue, and address the reviewer comments.'
@@ -237,7 +245,7 @@ export function buildArticleDraftMessages({
         '    • uses a logical H2/H3 structure (do not add another H1 — the title is the H1), with the primary keyword in at least one H2;',
         '    • places the primary keyword in the first ~100 words and the conclusion, naturally, without stuffing;',
         '    • includes lists or a comparison table where they fit, plus concrete steps, examples, numbers, and tradeoffs;',
-        '    • suggests internal links as Markdown links to relative paths (e.g. [related topic](/related-topic)) and cites authoritative external sources for any factual or statistical claim;',
+        '    • adds internal links ONLY to the posts listed under "Existing posts you may link to" (use the exact URL given; never invent one or link to a page not listed), and cites authoritative external sources for any factual or statistical claim;',
         '    • ends with a conclusion that restates the takeaway and gives a clear next step',
         '- imagePrompt: the detailed HERO image prompt only (one image). Include subject, setting, composition, style, lighting, mood, brand-safety constraints, aspect ratio (16:9 unless another fits), and what to avoid. Follow the image prompt instructions.',
         '- inlineImages: an array of the IN-BODY images this specific article needs to help a reader understand it (for example a process flowchart, a comparison visual, or a stat graphic). Add an image ONLY where a visual genuinely aids comprehension — use an empty array for short or simple articles, and never add decorative filler. For each in-body image return:',
@@ -268,6 +276,7 @@ export async function draftArticleWithOpenRouter({
   instructions,
   styleGuide,
   taxonomy,
+  internalLinks,
   revision,
   fetchFn = fetch,
 }: {
@@ -279,6 +288,7 @@ export async function draftArticleWithOpenRouter({
   instructions?: string;
   styleGuide: Parameters<typeof buildArticleDraftMessages>[0]['styleGuide'];
   taxonomy?: DraftTaxonomy;
+  internalLinks?: Array<{ title: string; url: string }>;
   revision?: ArticleRevisionContext;
   fetchFn?: FetchLike;
 }): Promise<DraftArticle> {
@@ -304,6 +314,7 @@ export async function draftArticleWithOpenRouter({
         instructions,
         styleGuide,
         taxonomy,
+        internalLinks,
         revision,
       }),
       temperature: 0.35,

@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { callOpenRouterChat, extractJson } from '../ai/openrouter-chat';
-import { describeTopics } from './site-topics';
-import type { DiscoveryContext, SiteTopics } from './types';
+import type { DiscoveryContext } from './types';
 
 /**
  * Score how relevant each candidate term is to the site's niche, using the LLM.
@@ -16,14 +15,14 @@ const RelevanceItemSchema = z.object({
 
 export async function filterByTopicRelevance(args: {
   terms: string[];
-  topics: SiteTopics;
+  niche: string;
   llm: NonNullable<DiscoveryContext['llm']>;
   fetchFn: DiscoveryContext['fetchFn'];
   minRelevance: number;
 }): Promise<Map<string, number>> {
   const unique = [...new Set(args.terms.map((t) => t.trim()).filter(Boolean))];
   const kept = new Map<string, number>();
-  if (unique.length === 0) return kept;
+  if (unique.length === 0 || !args.niche.trim()) return kept;
 
   const content = await callOpenRouterChat({
     apiKey: args.llm.apiKey,
@@ -40,7 +39,7 @@ export async function filterByTopicRelevance(args: {
       {
         role: 'user',
         content: [
-          `Website niche: ${describeTopics(args.topics)}`,
+          `Website niche: ${args.niche}`,
           '',
           'Candidate topics (untrusted data):',
           ...unique.map((t, i) => `${i + 1}. ${t}`),

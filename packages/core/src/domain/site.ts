@@ -106,6 +106,15 @@ export type SiteCredentialsSummary =
 export const SiteInputSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   baseUrl: z.string().url('Must be a valid URL'),
+  // Public URL path prefix for posts, e.g. "/blog" → {baseUrl}/blog/{slug}.
+  // Empty/omitted = posts live at the site root. Drives correct internal links.
+  articlePathPrefix: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || /^\/?[a-z0-9\-_/]*$/i.test(v), {
+      message: 'Use a URL path like /blog',
+    }),
   cmsType: CmsTypeSchema.default('WORDPRESS'),
   defaultAuthor: z.string().optional(),
   briefAutoApprove: z.boolean().default(true),

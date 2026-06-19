@@ -12,7 +12,7 @@ import {
   type DiscoveryResolveHost,
   type KeywordSource,
 } from '../keyword-sources/types';
-import { resolveSiteTopics } from '../keyword-sources/site-topics';
+import { resolveSiteTopics, buildNicheDescription } from '../keyword-sources/site-topics';
 import { runDiscovery } from '../keyword-sources/run-discovery';
 import { DEFAULT_KEYWORD_SOURCES } from '../keyword-sources/sources';
 import { getGscServiceAccount, getOpenRouterApiKey } from './provider-credential-service';
@@ -156,6 +156,7 @@ export async function runSiteDiscovery(
   }
 
   const topics = resolveSiteTopics(site.styleGuide);
+  const nicheDescription = buildNicheDescription(topics, site.styleGuide);
   const settings = await getSettings(db);
   const [serviceAccount, openRouterKey] = await Promise.all([
     getGscServiceAccount(db, actor, 'keyword.create').catch(() => undefined),
@@ -173,6 +174,7 @@ export async function runSiteDiscovery(
       gscPropertyUrl: site.gscPropertyUrl,
     },
     topics,
+    nicheDescription,
     now: new Date(),
     fetchFn,
     resolveHost: options.resolveHost,
