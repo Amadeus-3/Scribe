@@ -103,6 +103,7 @@ export async function createSiteAction(_prev: FormState, formData: FormData): Pr
     await createSite(prisma, actor, {
       name: str(formData.get('name')),
       baseUrl: str(formData.get('baseUrl')),
+      articlePathPrefix: optStr(formData.get('articlePathPrefix')),
       cmsType: str(formData.get('cmsType')) === 'WORDPRESS' ? 'WORDPRESS' : 'STRAPI',
       defaultAuthor: optStr(formData.get('defaultAuthor')),
       briefAutoApprove: formData.get('briefAutoApprove') === 'on',
@@ -123,6 +124,7 @@ export async function updateSiteAction(_prev: FormState, formData: FormData): Pr
     await updateSite(prisma, actor, id, {
       name: str(formData.get('name')),
       baseUrl: str(formData.get('baseUrl')),
+      articlePathPrefix: optStr(formData.get('articlePathPrefix')),
       cmsType: str(formData.get('cmsType')) === 'STRAPI' ? 'STRAPI' : 'WORDPRESS',
       defaultAuthor: optStr(formData.get('defaultAuthor')),
       briefAutoApprove: formData.get('briefAutoApprove') === 'on',
@@ -396,6 +398,39 @@ export async function generateArticleDraftAction(
     return toState('article.draft', e);
   }
 
+  redirect(`/articles/${articleId}`);
+}
+
+/**
+ * One-click "Generate" from a queued keyword row. Drafts an article for the
+ * keyword and redirects to its review page on success; on failure it returns the
+ * error so the button can surface it inline (e.g. "An article already exists for
+ * this keyword.").
+ */
+export async function generateFromKeywordAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  let articleId: string | null = null;
+  try {
+    const actor = await requireActor();
+    const siteId = str(formData.get('siteId'));
+    const article = await generateArticleDraft(
+      prisma,
+      actor,
+      { siteId, keyword: str(formData.get('keyword')) },
+      { apiKey: await getOpenRouterApiKey(prisma, actor) },
+    );
+    articleId = article.id;
+    revalidatePath(`/sites/${siteId}`);
+    revalidatePath('/articles');
+  } catch (e) {
+    if (e instanceof ArticleDraftError) {
+      logger.warn({ action: 'keyword.generate', errorMessage: e.message }, 'generate failed');
+      return { ok: false, error: e.message };
+    }
+    return toState('keyword.generate', e);
+  }
   redirect(`/articles/${articleId}`);
 }
 

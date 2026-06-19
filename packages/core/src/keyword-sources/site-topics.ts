@@ -63,3 +63,22 @@ export function describeTopics(topics: SiteTopics): string {
   if (topics.excluded.length > 0) parts.push(`Never include: ${topics.excluded.join(', ')}`);
   return parts.join('. ');
 }
+
+/**
+ * The niche string the Trends + LLM-web sources search/filter against. Prefers
+ * the structured topics; falls back to the style guide's business/SEO context so
+ * a site with no Topics still gets niche-relevant (not random) discovery.
+ * Returns '' only when there's genuinely nothing to anchor to.
+ */
+export function buildNicheDescription(
+  topics: SiteTopics,
+  styleGuide?: { businessContext?: string | null; seoGuidance?: string | null } | null,
+): string {
+  const structured = describeTopics(topics);
+  if (structured) return structured;
+  const fallback = [styleGuide?.businessContext, styleGuide?.seoGuidance]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .join('\n')
+    .trim();
+  return fallback.slice(0, 1500);
+}

@@ -113,6 +113,18 @@ export default async function SitesPage() {
                     className={inputClass}
                   />
                 </Field>
+                <Field
+                  label="Post URL path prefix"
+                  name="articlePathPrefix"
+                  hint="Optional, e.g. /blog. Where your posts live; leave blank for the site root. Used for correct internal links."
+                >
+                  <input
+                    id="articlePathPrefix"
+                    name="articlePathPrefix"
+                    placeholder="/blog"
+                    className={inputClass}
+                  />
+                </Field>
                 <Field label="Article CMS" name="cmsType">
                   <select id="cmsType" name="cmsType" defaultValue="STRAPI" className={inputClass}>
                     <option value="STRAPI">Strapi</option>

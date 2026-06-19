@@ -38,6 +38,7 @@ export interface StrapiArticleInput {
     mimeType: string;
     dataBase64: string;
     filename?: string;
+    alt?: string | null;
   } | null;
   /** In-body images, uploaded to media and embedded into the Markdown content. */
   inlineImages?: StrapiInlineImageInput[];
@@ -251,6 +252,11 @@ export function buildStrapiUploadUrl(baseUrl: string, credentials: StrapiCredent
   return joinUrl(credentials.apiBaseUrl ?? baseUrl, '/api/upload');
 }
 
+/** Media-library display name from a filename: drop the extension, keep the slug. */
+export function mediaNameFromFilename(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '') || filename;
+}
+
 async function uploadImageToStrapi({
   baseUrl,
   credentials,
@@ -259,13 +265,25 @@ async function uploadImageToStrapi({
 }: {
   baseUrl: string;
   credentials: StrapiCredentials;
-  image: { mimeType: string; dataBase64: string; filename?: string };
+  image: { mimeType: string; dataBase64: string; filename?: string; alt?: string | null };
   fetchFn: FetchLike;
 }): Promise<{ id: string | number; url: string | null }> {
   const formData = new FormData();
   const buffer = Buffer.from(image.dataBase64, 'base64');
   const filename = image.filename ?? `article-image.${image.mimeType.split('/')[1] ?? 'png'}`;
   formData.append('files', new Blob([buffer], { type: image.mimeType }), filename);
+
+  // Populate media-library metadata so each asset gets a clean, SEO-friendly name
+  // and accessible alt text instead of Strapi's defaults (a hashed filename, empty
+  // alt). Many themes read alt from the media entry, not the embedded Markdown.
+  const alt = image.alt?.trim();
+  const fileInfo: { name: string; alternativeText?: string } = {
+    name: mediaNameFromFilename(filename),
+  };
+  if (alt) {
+    fileInfo.alternativeText = alt;
+  }
+  formData.append('fileInfo', JSON.stringify(fileInfo));
 
   const response = await fetchFn(buildStrapiUploadUrl(baseUrl, credentials), {
     method: 'POST',
@@ -323,7 +341,12 @@ export async function publishToStrapi({
       const uploaded = await uploadImageToStrapi({
         baseUrl,
         credentials,
-        image: { mimeType: image.mimeType, dataBase64: image.dataBase64, filename: image.filename },
+        image: {
+          mimeType: image.mimeType,
+          dataBase64: image.dataBase64,
+          filename: image.filename,
+          alt: image.alt,
+        },
         fetchFn,
       });
       if (uploaded.url) {

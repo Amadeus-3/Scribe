@@ -77,7 +77,14 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <Card title="Review editor">
           {canEdit ? (
-            <ActionForm action={updateArticleDraftAction} submitLabel="Save article">
+            // Key on regenAttempts so a regenerate remounts the form and reloads
+            // the new draft into these uncontrolled inputs. Without this, the
+            // stale textarea would be saved back over the regenerated content.
+            <ActionForm
+              key={article.regenAttempts}
+              action={updateArticleDraftAction}
+              submitLabel="Save article"
+            >
               <input type="hidden" name="id" value={article.id} />
               <Field label="Title" name="title">
                 <input

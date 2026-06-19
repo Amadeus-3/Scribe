@@ -59,6 +59,8 @@ export const googleTrendsRssSource: KeywordSource = {
   async discover(ctx: DiscoveryContext): Promise<DiscoveredKeyword[]> {
     const llm = ctx.llm;
     if (!llm) return [];
+    // No niche => don't pollute the queue with random country-wide macro trends.
+    if (!ctx.nicheDescription.trim()) return [];
 
     const url = `${TRENDS_RSS_BASE}?geo=${encodeURIComponent(ctx.topics.geo)}`;
     await assertPublicHttpUrl(url, ctx.resolveHost); // SSRF guard on the outbound fetch
@@ -74,7 +76,7 @@ export const googleTrendsRssSource: KeywordSource = {
 
     const relevance = await filterByTopicRelevance({
       terms: trends.map((t) => t.title),
-      topics: ctx.topics,
+      niche: ctx.nicheDescription,
       llm,
       fetchFn: ctx.fetchFn,
       minRelevance: ctx.limits.minRelevance,

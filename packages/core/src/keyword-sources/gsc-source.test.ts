@@ -74,6 +74,7 @@ describe('googleSearchConsoleSource.discover', () => {
     return {
       site: { id: 's1', name: 'Site', baseUrl: 'https://example.com', gscPropertyUrl: 'sc-domain:example.com' },
       topics: { pillars: [], clusters: [], excluded: [], geo: 'US' },
+      nicheDescription: '',
       now: NOW,
       fetchFn: async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => ({}), text: async () => '' }),
       logger: { warn: vi.fn() },

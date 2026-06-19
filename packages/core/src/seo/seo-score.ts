@@ -32,6 +32,13 @@ export interface ScoreArticleSeoInput {
   bannedPhrases?: string[];
   /** Number of in-body (supporting) images planned for the article. */
   inlineImageCount?: number;
+  /**
+   * How many other published posts exist to link to. When 0, the internal-links
+   * check is not applicable (you cannot link to posts that do not exist) and
+   * passes; when undefined, the legacy "reward any internal link" behavior is
+   * used.
+   */
+  internalLinkCandidates?: number;
 }
 
 const STOPWORDS = new Set([
@@ -620,19 +627,25 @@ export function scoreArticleSeo(input: ScoreArticleSeoInput): SeoReport {
   // ── Links ──────────────────────────────────────────────────────────────────
   const internalLinks = links.filter((l) => !l.external).length;
   const suggestsInternal = /internal link|related (article|read|post|guide)|see also/i.test(md);
+  // When the site has no other published posts, internal links are impossible —
+  // don't penalize their absence (and don't ask the regenerator to add them).
+  const noInternalTargets = input.internalLinkCandidates === 0;
+  const hasInternalLink = internalLinks > 0 || suggestsInternal;
   checks.push({
     id: 'internal-links',
     label: 'Internal links',
     category: 'links',
     weight: 1,
     critical: false,
-    ...band(
-      internalLinks > 0 || suggestsInternal,
-      !(internalLinks > 0 || suggestsInternal),
-      'Includes internal link(s) or suggestions.',
-      'Suggest internal links to the pillar and adjacent cluster articles.',
-      '',
-    ),
+    ...(noInternalTargets
+      ? band(true, false, 'No other published posts to link to yet.', '', '')
+      : band(
+          hasInternalLink,
+          !hasInternalLink,
+          'Includes internal link(s) to existing posts.',
+          'Link to a relevant existing published post on this site.',
+          '',
+        )),
   });
 
   const externalLinks = links.filter((l) => l.external).length;

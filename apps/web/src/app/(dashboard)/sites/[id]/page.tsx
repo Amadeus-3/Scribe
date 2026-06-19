@@ -33,8 +33,10 @@ import {
   addKeywordsAction,
   deleteKeywordAction,
   discoverKeywordsAction,
+  generateFromKeywordAction,
   setSiteStatusAction,
 } from '@/server/actions';
+import { GenerateKeywordButton } from '@/components/generate-keyword-button';
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -117,7 +119,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
         />
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {canEdit ? (
           <Card title="Details" description="Public website settings and CMS type.">
             <ActionForm action={updateSiteAction} submitLabel="Save details">
@@ -138,6 +140,21 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   type="url"
                   defaultValue={site.baseUrl}
                   required
+                  className={inputClass}
+                />
+              </Field>
+              <Field
+                label="Post URL path prefix"
+                name="articlePathPrefix"
+                hint={`Where your posts live, e.g. /blog → ${site.baseUrl.replace(/\/$/, '')}${
+                  site.articlePathPrefix || '/blog'
+                }/your-post. Leave blank if posts are at the site root. Used to build correct internal links.`}
+              >
+                <input
+                  id="articlePathPrefix"
+                  name="articlePathPrefix"
+                  defaultValue={site.articlePathPrefix ?? ''}
+                  placeholder="/blog"
                   className={inputClass}
                 />
               </Field>
@@ -632,25 +649,40 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                 return (
                   <li
                     key={k.id}
-                    className="flex items-center justify-between gap-3 border-t border-border py-2 text-sm"
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-t border-border py-2 text-sm"
                   >
-                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      <span className="truncate">{k.term}</span>
-                      <StatusBadge status={k.status} />
-                      {fromDiscovery ? (
-                        <Badge tone="default">{k.source?.replaceAll('_', ' ')}</Badge>
+                    <div className="min-w-0">
+                      <div className="truncate text-fg" title={k.term}>
+                        {k.term}
+                      </div>
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                        <StatusBadge status={k.status} />
+                        {fromDiscovery ? (
+                          <Badge tone="default">{k.source?.replaceAll('_', ' ')}</Badge>
+                        ) : null}
+                        {typeof k.discoveryScore === 'number' ? (
+                          <Badge tone="muted">{Math.round(k.discoveryScore * 100)}</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {canGenerateArticle && k.status === 'QUEUED' ? (
+                        <GenerateKeywordButton
+                          action={generateFromKeywordAction}
+                          siteId={site.id}
+                          keyword={k.term}
+                        />
                       ) : null}
-                      {typeof k.discoveryScore === 'number' ? (
-                        <Badge tone="muted">{Math.round(k.discoveryScore * 100)}</Badge>
+                      {can(actor.role, 'keyword.delete') ? (
+                        <form action={deleteKeywordAction}>
+                          <input type="hidden" name="id" value={k.id} />
+                          <input type="hidden" name="siteId" value={site.id} />
+                          <button className={buttonClass({ variant: 'ghost', size: 'sm' })}>
+                            Remove
+                          </button>
+                        </form>
                       ) : null}
                     </span>
-                    {can(actor.role, 'keyword.delete') ? (
-                      <form action={deleteKeywordAction} className="shrink-0">
-                        <input type="hidden" name="id" value={k.id} />
-                        <input type="hidden" name="siteId" value={site.id} />
-                        <button className={buttonClass({ variant: 'ghost', size: 'sm' })}>Remove</button>
-                      </form>
-                    ) : null}
                   </li>
                 );
               })

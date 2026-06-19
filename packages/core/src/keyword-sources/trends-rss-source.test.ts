@@ -20,6 +20,7 @@ function ctx(over: Partial<DiscoveryContext> = {}): DiscoveryContext {
   return {
     site: { id: 's1', name: 'Coffee Blog', baseUrl: 'https://coffee.example', gscPropertyUrl: null },
     topics: { pillars: ['home espresso', 'coffee'], clusters: [], excluded: [], geo: 'US' },
+    nicheDescription: 'Primary topics: home espresso, coffee',
     now: new Date('2026-06-17T00:00:00Z'),
     fetchFn: async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => ({}), text: async () => '' }),
     resolveHost: PUBLIC_HOST,
