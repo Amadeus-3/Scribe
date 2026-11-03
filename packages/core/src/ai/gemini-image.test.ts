@@ -19,6 +19,7 @@ describe('generateGeminiImage', () => {
             },
           },
         ],
+        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 0 },
       }),
     });
 
@@ -45,6 +46,7 @@ describe('generateGeminiImage', () => {
     expect(result).toEqual({
       images: [{ mimeType: 'image/png', dataBase64: 'aW1hZ2U=' }],
       text: ['Created image.'],
+      usage: { inputTokens: 12, outputTokens: 0, cachedTokens: 0 },
     });
   });
 

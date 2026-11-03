@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mapGeminiUsage, type LlmUsage } from '../cost/usage';
 
 interface HttpResponseLike {
   ok: boolean;
@@ -44,6 +45,14 @@ const GeminiImageResponseSchema = z
           .passthrough(),
       )
       .default([]),
+    usageMetadata: z
+      .object({
+        promptTokenCount: z.number().nullable().optional(),
+        candidatesTokenCount: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 
@@ -55,6 +64,7 @@ export interface GeminiGeneratedImage {
 export interface GeminiImageResult {
   images: GeminiGeneratedImage[];
   text: string[];
+  usage: LlmUsage;
 }
 
 export class GeminiImageError extends Error {
@@ -132,5 +142,5 @@ export async function generateGeminiImage({
     throw new GeminiImageError('Gemini returned no image data.');
   }
 
-  return { images, text };
+  return { images, text, usage: mapGeminiUsage(parsed.usageMetadata) };
 }

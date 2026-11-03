@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import type { LlmUsage } from '../cost/usage';
+
+/** Reports token usage for a discovery LLM call so the caller can record cost. */
+export type DiscoveryUsageSink = (entry: {
+  purpose: 'discovery_relevance' | 'discovery_web';
+  model: string;
+  usage: LlmUsage;
+}) => void;
 
 /**
  * Pluggable trending-topic discovery (Spec §6, Phase 6). Each KeywordSource
@@ -134,7 +142,13 @@ export interface DiscoveryContext {
   /** Present => GSC source enabled. */
   gsc?: { serviceAccount: GscServiceAccount };
   /** Present => Trends + LLM-web sources may use the LLM (relevance / web search). */
-  llm?: { apiKey: string; relevanceModel: string; webModel: string };
+  llm?: {
+    apiKey: string;
+    relevanceModel: string;
+    webModel: string;
+    /** Optional sink so the caller can record token usage/cost per discovery call. */
+    onUsage?: DiscoveryUsageSink;
+  };
   limits: {
     /** Max candidates kept per source after scoring. */
     maxPerSource: number;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mapOpenRouterUsage, type LlmUsage } from '../cost/usage';
 
 /**
  * Minimal OpenRouter chat-completions helper, shared by features that need a
@@ -7,6 +8,19 @@ import { z } from 'zod';
  * plugin for grounded, recent results.
  */
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+/** OpenRouter returns token usage alongside the completion; capture it for cost accounting. */
+const UsageRawSchema = z
+  .object({
+    prompt_tokens: z.number().nullable().optional(),
+    completion_tokens: z.number().nullable().optional(),
+    prompt_tokens_details: z
+      .object({ cached_tokens: z.number().nullable().optional() })
+      .nullable()
+      .optional(),
+  })
+  .nullable()
+  .optional();
 
 interface HttpResponseLike {
   ok: boolean;
@@ -25,7 +39,13 @@ const ChatResponseSchema = z.object({
   choices: z
     .array(z.object({ message: z.object({ content: z.string().nullable() }) }))
     .min(1),
+  usage: UsageRawSchema,
 });
+
+export interface OpenRouterChatResult {
+  content: string;
+  usage: LlmUsage;
+}
 
 export class OpenRouterChatError extends Error {
   constructor(message: string) {
@@ -56,7 +76,7 @@ export async function callOpenRouterChat({
   plugins?: Array<Record<string, unknown>>;
   temperature?: number;
   fetchFn?: FetchLike;
-}): Promise<string> {
+}): Promise<OpenRouterChatResult> {
   if (!apiKey) {
     throw new OpenRouterChatError('Save an OpenRouter API key in Settings first.');
   }
@@ -82,7 +102,7 @@ export async function callOpenRouterChat({
   const parsed = ChatResponseSchema.parse(await res.json());
   const content = parsed.choices[0]?.message.content;
   if (!content) throw new OpenRouterChatError('OpenRouter returned empty content.');
-  return content;
+  return { content, usage: mapOpenRouterUsage(parsed.usage) };
 }
 
 /** Parse a JSON value from model output (raw, fenced, or embedded). Throws on failure. */

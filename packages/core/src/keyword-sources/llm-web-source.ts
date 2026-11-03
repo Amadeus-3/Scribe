@@ -27,7 +27,7 @@ export const llmWebTrendSource: KeywordSource = {
     // No niche => skip rather than return generic, off-site topics.
     if (!ctx.nicheDescription.trim()) return [];
 
-    const content = await callOpenRouterChat({
+    const { content, usage } = await callOpenRouterChat({
       apiKey: llm.apiKey,
       model: llm.webModel,
       plugins: [{ id: 'web', max_results: 5 }],
@@ -55,6 +55,7 @@ export const llmWebTrendSource: KeywordSource = {
         },
       ],
     });
+    llm.onUsage?.({ purpose: 'discovery_web', model: llm.webModel, usage });
 
     const parsed = extractJson(content);
     const arr = Array.isArray(parsed) ? parsed : (parsed as { items?: unknown }).items;

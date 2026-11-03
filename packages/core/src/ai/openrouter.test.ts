@@ -6,7 +6,7 @@ import {
 } from './openrouter';
 
 describe('normalizeOpenRouterTextModel', () => {
-  it('keeps text-output models and normalizes pricing + capabilities', () => {
+  it('keeps text-in/text-out models and normalizes pricing + capabilities', () => {
     const model = normalizeOpenRouterTextModel({
       id: 'provider/model',
       name: 'Provider Model',
@@ -14,7 +14,7 @@ describe('normalizeOpenRouterTextModel', () => {
       created: 123,
       context_length: 128000,
       architecture: {
-        input_modalities: ['text', 'image'],
+        input_modalities: ['text'],
         output_modalities: ['text'],
       },
       pricing: {
@@ -31,7 +31,7 @@ describe('normalizeOpenRouterTextModel', () => {
       name: 'Provider Model',
       description: 'A useful text model',
       contextLength: 128000,
-      inputModalities: ['text', 'image'],
+      inputModalities: ['text'],
       outputModalities: ['text'],
       promptPriceUsdPerToken: 0.000001,
       completionPriceUsdPerToken: 0.000002,
@@ -55,10 +55,45 @@ describe('normalizeOpenRouterTextModel', () => {
 
     expect(model).toBeNull();
   });
+
+  it('drops multimodal-input models', () => {
+    const model = normalizeOpenRouterTextModel({
+      id: 'provider/vision',
+      name: 'Provider Vision',
+      architecture: {
+        input_modalities: ['text', 'image'],
+        output_modalities: ['text'],
+      },
+    });
+
+    expect(model).toBeNull();
+  });
+
+  it('drops models that emit text plus another modality', () => {
+    const model = normalizeOpenRouterTextModel({
+      id: 'provider/omni',
+      name: 'Provider Omni',
+      architecture: {
+        input_modalities: ['text'],
+        output_modalities: ['text', 'image'],
+      },
+    });
+
+    expect(model).toBeNull();
+  });
+
+  it('drops models with no declared modalities', () => {
+    const model = normalizeOpenRouterTextModel({
+      id: 'provider/unknown',
+      name: 'Provider Unknown',
+    });
+
+    expect(model).toBeNull();
+  });
 });
 
 describe('fetchOpenRouterTextModels', () => {
-  it('fetches the catalog and returns only text-output models', async () => {
+  it('fetches the catalog and returns only text-in/text-out models', async () => {
     const fetchFn = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -69,13 +104,19 @@ describe('fetchOpenRouterTextModels', () => {
           {
             id: 'text/model',
             name: 'Text Model',
-            architecture: { output_modalities: ['text'] },
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
             pricing: { prompt: '0.000001', completion: '0.000003' },
           },
           {
             id: 'image/model',
             name: 'Image Model',
-            architecture: { output_modalities: ['image'] },
+            architecture: { input_modalities: ['text'], output_modalities: ['image'] },
+          },
+          {
+            id: 'vision/model',
+            name: 'Vision Model',
+            architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
+            pricing: { prompt: '0.000001', completion: '0.000003' },
           },
         ],
       }),
