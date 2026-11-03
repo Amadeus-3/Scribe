@@ -12,6 +12,8 @@ export * from './config/env';
 // Security primitives
 export * from './crypto/encryption';
 export * from './auth/authorize';
+export * from './auth/system-actor';
+export * from './auth/human-actor';
 
 // Observability
 export * from './observability/logger';
@@ -22,6 +24,15 @@ export * from './domain/settings';
 export * from './domain/style-guide';
 export * from './domain/site';
 export * from './domain/keyword';
+export * from './domain/article-transitions';
+
+// Pipeline (autopilot)
+export * from './pipeline/pacing';
+export * from './pipeline/events';
+
+// Notifications
+export * from './notify/review-digest';
+export * from './notify/mailer';
 
 // AI providers
 export * from './ai/openrouter';
@@ -46,11 +57,15 @@ export * from './site-context/public-site-context';
 export * from './seo/seo-report';
 export * from './seo/seo-score';
 
+// Cost/usage accounting + budget guard
+export * from './cost/usage';
+
 // CMS publishers
 export * from './cms/strapi-publisher';
 export * from './cms/strapi-taxonomy';
 
 // Services (authorize + Zod + audit-in-transaction)
+export * from './services/pipeline-service';
 export * from './services/site-service';
 export * from './services/style-guide-service';
 export * from './services/keyword-service';
