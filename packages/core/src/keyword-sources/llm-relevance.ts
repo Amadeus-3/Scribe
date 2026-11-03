@@ -24,7 +24,7 @@ export async function filterByTopicRelevance(args: {
   const kept = new Map<string, number>();
   if (unique.length === 0 || !args.niche.trim()) return kept;
 
-  const content = await callOpenRouterChat({
+  const { content, usage } = await callOpenRouterChat({
     apiKey: args.llm.apiKey,
     model: args.llm.relevanceModel,
     responseFormat: { type: 'json_object' },
@@ -50,6 +50,7 @@ export async function filterByTopicRelevance(args: {
       },
     ],
   });
+  args.llm.onUsage?.({ purpose: 'discovery_relevance', model: args.llm.relevanceModel, usage });
 
   const parsed = extractJson(content);
   const arr = Array.isArray(parsed) ? parsed : (parsed as { items?: unknown }).items;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mapOpenRouterUsage, type LlmUsage } from '../cost/usage';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -43,6 +44,17 @@ const OpenRouterChatResponseSchema = z.object({
       }),
     )
     .min(1),
+  usage: z
+    .object({
+      prompt_tokens: z.number().nullable().optional(),
+      completion_tokens: z.number().nullable().optional(),
+      prompt_tokens_details: z
+        .object({ cached_tokens: z.number().nullable().optional() })
+        .nullable()
+        .optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export class StyleGuideSuggestionError extends Error {
@@ -132,7 +144,7 @@ export async function suggestStyleGuideWithOpenRouter({
   siteText: string;
   notes?: string;
   fetchFn?: FetchLike;
-}): Promise<SuggestedStyleGuide> {
+}): Promise<{ suggestion: SuggestedStyleGuide; usage: LlmUsage }> {
   if (!apiKey) {
     throw new StyleGuideSuggestionError(
       'Save an OpenRouter API key in Settings before using AI suggestions.',
@@ -167,5 +179,8 @@ export async function suggestStyleGuideWithOpenRouter({
     throw new StyleGuideSuggestionError('OpenRouter returned an empty style guide suggestion.');
   }
 
-  return SuggestedStyleGuideSchema.parse(extractJsonObject(content));
+  return {
+    suggestion: SuggestedStyleGuideSchema.parse(extractJsonObject(content)),
+    usage: mapOpenRouterUsage(parsed.usage),
+  };
 }

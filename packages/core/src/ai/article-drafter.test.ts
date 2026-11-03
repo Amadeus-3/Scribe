@@ -102,11 +102,14 @@ describe('draftArticleWithOpenRouter', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ choices: [{ message: { content } }] }),
+      json: async () => ({
+        choices: [{ message: { content } }],
+        usage: { prompt_tokens: 1200, completion_tokens: 800, prompt_tokens_details: { cached_tokens: 200 } },
+      }),
       text: async () => '',
     }));
 
-    const draft = await draftArticleWithOpenRouter({
+    const { draft, usage } = await draftArticleWithOpenRouter({
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
@@ -123,6 +126,7 @@ describe('draftArticleWithOpenRouter', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer openrouter-key' }),
       }),
     );
+    expect(usage).toEqual({ inputTokens: 1000, outputTokens: 800, cachedTokens: 200 });
     expect(draft.slug).toBe('how-to-build-wealth');
     expect(draft.imagePrompt).toContain('personal finance');
     expect(draft.inlineImages).toEqual([]);
@@ -148,7 +152,7 @@ describe('draftArticleWithOpenRouter', () => {
       text: async () => '',
     }));
 
-    const draft = await draftArticleWithOpenRouter({
+    const { draft } = await draftArticleWithOpenRouter({
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
@@ -186,7 +190,7 @@ describe('draftArticleWithOpenRouter', () => {
       text: async () => '',
     }));
 
-    const draft = await draftArticleWithOpenRouter({
+    const { draft } = await draftArticleWithOpenRouter({
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
@@ -230,7 +234,7 @@ describe('classifyArticleTaxonomyWithOpenRouter', () => {
       text: async () => '',
     }));
 
-    const result = await classifyArticleTaxonomyWithOpenRouter({
+    const { classification } = await classifyArticleTaxonomyWithOpenRouter({
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       title: 'How to Build Wealth',
@@ -240,7 +244,7 @@ describe('classifyArticleTaxonomyWithOpenRouter', () => {
       fetchFn,
     });
 
-    expect(result).toEqual({ categorySlug: 'how-to-guides', tagSlugs: ['investing'] });
+    expect(classification).toEqual({ categorySlug: 'how-to-guides', tagSlugs: ['investing'] });
   });
 
   it('requires an API key', async () => {
@@ -287,7 +291,7 @@ describe('suggestInlineImagesWithOpenRouter', () => {
       text: async () => '',
     }));
 
-    const result = await suggestInlineImagesWithOpenRouter({
+    const { images } = await suggestInlineImagesWithOpenRouter({
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       title: 'How to Build Wealth',
@@ -296,9 +300,9 @@ describe('suggestInlineImagesWithOpenRouter', () => {
       fetchFn,
     });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.placement).toBe('Steps');
-    expect(result[0]?.aspectRatio).toBe('16:9');
+    expect(images).toHaveLength(1);
+    expect(images[0]?.placement).toBe('Steps');
+    expect(images[0]?.aspectRatio).toBe('16:9');
   });
 
   it('requires an API key', async () => {

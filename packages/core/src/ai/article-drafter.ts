@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mapOpenRouterUsage, type LlmUsage } from '../cost/usage';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -89,6 +90,17 @@ const OpenRouterChatResponseSchema = z.object({
       }),
     )
     .min(1),
+  usage: z
+    .object({
+      prompt_tokens: z.number().nullable().optional(),
+      completion_tokens: z.number().nullable().optional(),
+      prompt_tokens_details: z
+        .object({ cached_tokens: z.number().nullable().optional() })
+        .nullable()
+        .optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export class ArticleDraftError extends Error {
@@ -291,7 +303,7 @@ export async function draftArticleWithOpenRouter({
   internalLinks?: Array<{ title: string; url: string }>;
   revision?: ArticleRevisionContext;
   fetchFn?: FetchLike;
-}): Promise<DraftArticle> {
+}): Promise<{ draft: DraftArticle; usage: LlmUsage }> {
   if (!apiKey) {
     throw new ArticleDraftError(
       'Save an OpenRouter API key in Settings before generating articles.',
@@ -335,7 +347,10 @@ export async function draftArticleWithOpenRouter({
     throw new ArticleDraftError('OpenRouter returned an empty article draft.');
   }
 
-  return DraftArticleSchema.parse(extractJsonObject(content));
+  return {
+    draft: DraftArticleSchema.parse(extractJsonObject(content)),
+    usage: mapOpenRouterUsage(parsed.usage),
+  };
 }
 
 export const ArticleClassificationSchema = z.object({
@@ -409,7 +424,7 @@ export async function classifyArticleTaxonomyWithOpenRouter({
   keyword?: string;
   taxonomy: DraftTaxonomy;
   fetchFn?: FetchLike;
-}): Promise<ArticleClassification> {
+}): Promise<{ classification: ArticleClassification; usage: LlmUsage }> {
   if (!apiKey) {
     throw new ArticleDraftError(
       'Save an OpenRouter API key in Settings before classifying articles.',
@@ -444,7 +459,10 @@ export async function classifyArticleTaxonomyWithOpenRouter({
     throw new ArticleDraftError('OpenRouter returned an empty classification.');
   }
 
-  return ArticleClassificationSchema.parse(extractJsonObject(content));
+  return {
+    classification: ArticleClassificationSchema.parse(extractJsonObject(content)),
+    usage: mapOpenRouterUsage(parsed.usage),
+  };
 }
 
 const SuggestedInlineImagesSchema = z.object({
@@ -508,7 +526,7 @@ export async function suggestInlineImagesWithOpenRouter({
   keyword?: string;
   imagePromptInstructions?: string | null;
   fetchFn?: FetchLike;
-}): Promise<DraftInlineImage[]> {
+}): Promise<{ images: DraftInlineImage[]; usage: LlmUsage }> {
   if (!apiKey) {
     throw new ArticleDraftError(
       'Save an OpenRouter API key in Settings before suggesting images.',
@@ -548,5 +566,8 @@ export async function suggestInlineImagesWithOpenRouter({
     throw new ArticleDraftError('OpenRouter returned an empty image suggestion.');
   }
 
-  return SuggestedInlineImagesSchema.parse(extractJsonObject(content)).inlineImages;
+  return {
+    images: SuggestedInlineImagesSchema.parse(extractJsonObject(content)).inlineImages,
+    usage: mapOpenRouterUsage(parsed.usage),
+  };
 }
