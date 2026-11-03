@@ -39,6 +39,12 @@ export interface ScoreArticleSeoInput {
    * used.
    */
   internalLinkCandidates?: number;
+  /**
+   * The site's public base URL. Used to tell internal links (same host, written
+   * as full URLs) from external citations. Without it, any absolute URL is
+   * treated as external (legacy behavior).
+   */
+  siteUrl?: string;
 }
 
 const STOPWORDS = new Set([
@@ -212,16 +218,33 @@ function hasTable(md: string): boolean {
   return /^\s*\|.+\|\s*$/m.test(md) && /^\s*\|?[\s:]*-{3,}[\s:|-]*\|?/m.test(md);
 }
 
-function getLinks(md: string): { href: string; external: boolean }[] {
+function getLinks(md: string, siteHost?: string): { href: string; external: boolean }[] {
   const links: { href: string; external: boolean }[] = [];
   const re = /(!?)\[[^\]]*\]\(([^)\s]+)[^)]*\)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(md)) !== null) {
     if (m[1] === '!') continue; // image, not a link
     const href = m[2] ?? '';
-    links.push({ href, external: /^https?:\/\//i.test(href) });
+    links.push({ href, external: isExternalLink(href, siteHost) });
   }
   return links;
+}
+
+/**
+ * External = an absolute http(s) link whose host differs from the site's. A
+ * relative path OR an absolute URL on the site's own host counts as internal
+ * (the drafter writes internal links as full {baseUrl}/{prefix}/{slug} URLs, so
+ * a naive "any https = external" test would miscount every real internal link).
+ * Without a known site host, fall back to the legacy "any absolute = external".
+ */
+function isExternalLink(href: string, siteHost?: string): boolean {
+  if (!/^https?:\/\//i.test(href)) return false; // relative / anchor / mailto → internal-ish
+  if (!siteHost) return true;
+  try {
+    return new URL(href).host.toLowerCase() !== siteHost;
+  } catch {
+    return true;
+  }
 }
 
 /** pass → status 'pass'; else warn → 'warn'; else 'fail'. */
@@ -256,7 +279,15 @@ export function scoreArticleSeo(input: ScoreArticleSeoInput): SeoReport {
   const h2Count = headings.filter((h) => h.level === 2).length;
   const bodyH1Count = headings.filter((h) => h.level === 1).length;
   const intro = firstParagraph(md);
-  const links = getLinks(md);
+  let siteHost: string | undefined;
+  if (input.siteUrl) {
+    try {
+      siteHost = new URL(input.siteUrl).host.toLowerCase();
+    } catch {
+      siteHost = undefined;
+    }
+  }
+  const links = getLinks(md, siteHost);
 
   const checks: SeoCheck[] = [];
 
