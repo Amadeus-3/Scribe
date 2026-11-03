@@ -224,6 +224,28 @@ describe('scoreArticleSeo — internal links (context-aware)', () => {
     const report = scoreArticleSeo({ ...goodArticle(), internalLinkCandidates: 5 });
     expect(find(report, 'internal-links').status).toBe('pass');
   });
+
+  it('counts a same-host ABSOLUTE url as an internal link when siteUrl is given', () => {
+    // The drafter writes internal links as full {baseUrl}/{slug} URLs. Without a
+    // site host the scorer used to treat any https:// link as external, so a real
+    // internal link never counted and the check failed forever (the reported bug).
+    const base = goodArticle();
+    const md = base.contentMarkdown.replace(
+      'See our [pour-over brewing guide](/guides/pour-over) and the standards from [the SCA](https://example.com).',
+      'See our [pour-over brewing guide](https://wiselyrich.com/blog/pour-over) for more.',
+    );
+
+    const withoutHost = scoreArticleSeo({ ...base, contentMarkdown: md, internalLinkCandidates: 5 });
+    expect(find(withoutHost, 'internal-links').status).not.toBe('pass'); // mis-counted as external
+
+    const withHost = scoreArticleSeo({
+      ...base,
+      contentMarkdown: md,
+      internalLinkCandidates: 5,
+      siteUrl: 'https://wiselyrich.com',
+    });
+    expect(find(withHost, 'internal-links').status).toBe('pass'); // now correctly internal
+  });
 });
 
 describe('scoreArticleSeo — long / headline keyword', () => {
