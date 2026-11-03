@@ -32,6 +32,7 @@ import {
   upsertStyleGuideAction,
   addKeywordsAction,
   deleteKeywordAction,
+  requeueKeywordAction,
   discoverKeywordsAction,
   generateFromKeywordAction,
   setSiteStatusAction,
@@ -211,6 +212,28 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />{' '}
                   Include in the weekly auto-discovery run
                 </label>
+                <label className="flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="autopilotEnabled"
+                    defaultChecked={site.autopilotEnabled}
+                  />{' '}
+                  Let autopilot draft articles for this site
+                </label>
+                <Field
+                  label="Autopilot articles per week"
+                  name="autopilotArticlesPerWeek"
+                  hint="Leave blank to use the global setting."
+                >
+                  <input
+                    id="autopilotArticlesPerWeek"
+                    name="autopilotArticlesPerWeek"
+                    type="number"
+                    min="0"
+                    defaultValue={site.autopilotArticlesPerWeek ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
               </Disclosure>
             </ActionForm>
             <form action={setSiteStatusAction} className="mt-3 border-t border-border pt-3">
@@ -672,6 +695,15 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                           siteId={site.id}
                           keyword={k.term}
                         />
+                      ) : null}
+                      {canKw && k.status === 'SKIPPED' ? (
+                        <form action={requeueKeywordAction}>
+                          <input type="hidden" name="id" value={k.id} />
+                          <input type="hidden" name="siteId" value={site.id} />
+                          <button className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+                            Requeue
+                          </button>
+                        </form>
                       ) : null}
                       {can(actor.role, 'keyword.delete') ? (
                         <form action={deleteKeywordAction}>

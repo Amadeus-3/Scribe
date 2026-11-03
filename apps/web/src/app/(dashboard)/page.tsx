@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { prisma } from '@scribe/core';
+import { prisma, getSettings, monthToDateSpendUsd, can } from '@scribe/core';
 import { requireActor } from '@/lib/session';
 import { Card, PageHeader, Stat, StatusBadge, StepList, buttonClass } from '@/components/ui';
+import { AutopilotPanel } from '@/components/autopilot-panel';
 
 export default async function DashboardHome() {
-  await requireActor();
-  const [sites, configuredSites, queuedKeywords, articles, pendingReview, approved, published, failed, recent] =
+  const actor = await requireActor();
+  const [sites, configuredSites, queuedKeywords, articles, pendingReview, approved, published, failed, recent, spendThisMonth, settings] =
     await Promise.all([
     prisma.site.count(),
     prisma.site.count({ where: { cmsCredentialsEnc: { not: null } } }),
@@ -20,7 +21,14 @@ export default async function DashboardHome() {
       take: 5,
       select: { id: true, title: true, status: true, updatedAt: true, wordCount: true },
     }),
+    monthToDateSpendUsd(prisma),
+    getSettings(prisma),
   ]);
+
+  const budget = settings.monthly_budget_usd;
+  const spendPct = budget > 0 ? Math.round((spendThisMonth / budget) * 100) : 0;
+  const spendDescription =
+    budget > 0 ? `of $${budget.toFixed(0)} monthly budget (${spendPct}%)` : 'this month (no budget set)';
 
   return (
     <>
@@ -33,14 +41,21 @@ export default async function DashboardHome() {
           </Link>
         }
       />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <Stat label="Sites" value={sites} description={`${configuredSites} with CMS credentials`} />
         <Stat label="Queued keywords" value={queuedKeywords} description="Waiting for article ideas" />
         <Stat label="Needs review" value={pendingReview} description="Drafts awaiting a decision" />
         <Stat label="Ready / failed" value={`${approved} / ${failed}`} description="Approved and retryable posts" />
+        <Stat
+          label="AI spend (month)"
+          value={`$${spendThisMonth.toFixed(2)}`}
+          description={spendDescription}
+        />
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[380px_1fr]">
+        <AutopilotPanel canRun={can(actor.role, 'article.create')} />
+
         <Card title="Start here" description="The shortest path to a published blog post.">
           <StepList
             steps={[

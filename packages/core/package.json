@@ -26,11 +26,13 @@
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",
+    "nodemailer": "^8.0.10",
     "pino": "^9.6.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "@types/nodemailer": "^6.4.17",
     "@vitest/coverage-v8": "^2.1.8",
     "dotenv-cli": "^8.0.0",
     "pino-pretty": "^13.0.0",

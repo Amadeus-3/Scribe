@@ -24,6 +24,47 @@ export const SettingsSchema = z.object({
   // Trending-topic discovery: opt-in weekly cron (per-site flag also required).
   discovery_cron_enabled: z.boolean().default(false),
 
+  // ── Autopilot ──────────────────────────────────────────────────────────────
+  // The tick cron is fixed (Inngest cron strings are static and only take effect
+  // on re-registration); ALL cadence is read from these keys at runtime so it
+  // stays editable from the dashboard. See pipeline/pacing.ts.
+  // Everything here ships off or conservative, like discovery_cron_enabled.
+  autopilot_enabled: z.boolean().default(false),
+  /** Target articles per site per rolling 7 days. 0 pauses that site. */
+  autopilot_articles_per_week: z.number().int().nonnegative().max(100).default(3),
+  /** 0 derives an even spacing from autopilot_articles_per_week. */
+  autopilot_min_spacing_minutes: z.number().int().nonnegative().default(0),
+  /** Cap on PENDING_REVIEW + CHANGES_REQUESTED. 0 = unlimited. */
+  autopilot_max_unreviewed: z.number().int().nonnegative().default(5),
+  autopilot_max_concurrent_drafts: z.number().int().positive().max(5).default(1),
+  autopilot_max_inline_images: z.number().int().nonnegative().max(10).default(4),
+  /** Percent of the monthly budget held back for human-triggered work. */
+  autopilot_budget_reserve_pct: z.number().min(0).max(90).default(10),
+  autopilot_generate_hero_image: z.boolean().default(true),
+  autopilot_generate_inline_images: z.boolean().default(true),
+  autopilot_assign_taxonomy: z.boolean().default(true),
+  /** Claims older than this are treated as orphaned by a crashed worker. */
+  autopilot_stale_claim_minutes: z.number().int().positive().default(60),
+  /** Below this many claimable keywords, the tick requests discovery. */
+  autopilot_keyword_buffer_low_water: z.number().int().nonnegative().default(5),
+  autopilot_run_window: z
+    .object({
+      /** 0=Sun..6=Sat. Empty means every day. */
+      daysOfWeek: z.array(z.number().int().min(0).max(6)).default([]),
+      startHour: z.number().int().min(0).max(23).default(0),
+      endHour: z.number().int().min(1).max(24).default(24),
+      /** Fixed offset in minutes, so no tz database is needed. */
+      timezoneOffsetMinutes: z.number().int().min(-840).max(840).default(0),
+    })
+    .default({ daysOfWeek: [], startHour: 0, endHour: 24, timezoneOffsetMinutes: 0 }),
+
+  // ── Review digest ──────────────────────────────────────────────────────────
+  review_digest_enabled: z.boolean().default(false),
+  review_digest_hour_utc: z.number().int().min(0).max(23).default(8),
+  /** Empty falls back to every ADMIN/EDITOR user. */
+  review_digest_recipients: z.array(z.string().email()).default([]),
+  review_digest_min_articles: z.number().int().positive().default(1),
+
   // Model selection (Spec §7.2)
   models: z
     .object({
@@ -94,6 +135,13 @@ export const SettingsSchema = z.object({
     )
     .default({
       '~anthropic/claude-sonnet-latest': { inputPerMTok: 3, outputPerMTok: 15 },
+    }),
+
+  // Flat per-image price in USD (image providers bill per image, not per token).
+  image_pricing: z
+    .record(z.string(), z.object({ perImageUsd: z.number().nonnegative() }))
+    .default({
+      'gemini-3.1-flash-image': { perImageUsd: 0.039 },
     }),
 });
 

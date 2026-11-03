@@ -31,6 +31,10 @@ export interface SiteDTO {
   gscPropertyUrl: string | null;
   /** Whether the weekly discovery cron should run for this site. */
   discoveryEnabled: boolean;
+  /** Whether the autopilot may draft for this site. */
+  autopilotEnabled: boolean;
+  /** Per-site weekly target; null inherits the global setting. */
+  autopilotArticlesPerWeek: number | null;
   /** Whether credentials are stored — the ciphertext itself is never exposed. */
   hasCredentials: boolean;
   createdAt: Date;
@@ -48,6 +52,8 @@ function toSiteDTO(site: Site): SiteDTO {
     briefAutoApprove: site.briefAutoApprove,
     gscPropertyUrl: site.gscPropertyUrl,
     discoveryEnabled: site.discoveryEnabled,
+    autopilotEnabled: site.autopilotEnabled,
+    autopilotArticlesPerWeek: site.autopilotArticlesPerWeek,
     hasCredentials: Boolean(site.cmsCredentialsEnc),
     createdAt: site.createdAt,
   };
@@ -128,6 +134,8 @@ export async function createSite(db: PrismaClient, actor: Actor, input: unknown)
         briefAutoApprove: data.briefAutoApprove,
         gscPropertyUrl: data.gscPropertyUrl ?? null,
         discoveryEnabled: data.discoveryEnabled,
+        autopilotEnabled: data.autopilotEnabled,
+        autopilotArticlesPerWeek: data.autopilotArticlesPerWeek,
       },
     });
     await recordAudit(tx, {
@@ -165,6 +173,8 @@ export async function updateSite(
         briefAutoApprove: data.briefAutoApprove,
         gscPropertyUrl: data.gscPropertyUrl ?? null,
         discoveryEnabled: data.discoveryEnabled,
+        autopilotEnabled: data.autopilotEnabled,
+        autopilotArticlesPerWeek: data.autopilotArticlesPerWeek,
       },
     });
     await recordAudit(tx, {
