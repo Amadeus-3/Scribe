@@ -1,0 +1,149 @@
+name: Deploy
+
+# Redeploys the VPS after CI passes on main/master (Phase 8, Decision §18.6).
+#
+#   push to main ──▶ CI (lint/typecheck/test/build) ──▶ this workflow
+#                                                        ├─ build image → GHCR
+#                                                        └─ ssh VPS: pull + up -d
+#
+# Chaining on `workflow_run` (not `push`) means a red CI never ships. The image
+# is built here, not on the VPS, so a small box never runs `next build`.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST      e.g. 203.0.113.10 or scribe.example.com
+#   VPS_USER      the deploy user created in docs/deploy.md (e.g. deploy)
+#   VPS_SSH_KEY   that user's PRIVATE key (ed25519), full PEM text
+#   VPS_PORT      optional, default 22
+# With no VPS_HOST set the image is still pushed and the deploy job is skipped,
+# so merging to main is safe before the server exists.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+
+# One deploy at a time, never cancelled midway (a half-applied release is worse
+# than a late one).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # The commit CI just validated (workflow_run), or the current ref (dispatch).
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  preflight:
+    name: Should deploy?
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      # `secrets` is not available in a job-level `if`, so surface it as an output.
+      - id: check
+        run: echo "deploy=${{ secrets.VPS_HOST != '' }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and push image
+    needs: preflight
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        name: Image name and tag
+        run: |
+          image="$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+          tag="sha-$(echo "$RELEASE_SHA" | cut -c1-12)"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Redeploy VPS
+    needs: [preflight, build]
+    if: needs.preflight.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - name: Copy compose file and Caddyfile
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: 'docker-compose.prod.yml,deploy/Caddyfile'
+          target: /opt/scribe/.incoming
+          strip_components: 0
+      - name: Pull image, migrate, restart
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_USER: ${{ github.actor }}
+          # Ephemeral; lets the VPS pull this repo's private package for this run.
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: GHCR_USER,GHCR_TOKEN,IMAGE,IMAGE_TAG
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd /opt/scribe
+            test -f .env || { echo "/opt/scribe/.env missing — see docs/deploy.md"; exit 1; }
+
+            # Promote the files scp dropped in .incoming/ (atomic-ish rename).
+            mv -f .incoming/docker-compose.prod.yml docker-compose.yml
+            mv -f .incoming/deploy/Caddyfile Caddyfile
+            rm -rf .incoming
+
+            # Pin this release in .env so a later manual `docker compose up -d`
+            # restarts the same image instead of drifting to :latest.
+            sed -i '/^IMAGE=/d;/^IMAGE_TAG=/d' .env
+            printf 'IMAGE=%s\nIMAGE_TAG=%s\n' "$IMAGE" "$IMAGE_TAG" >> .env
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose pull --quiet web
+            # migrate runs first (depends_on: service_completed_successfully),
+            # then web/worker/inngest/caddy are recreated on the new image.
+            docker compose up -d --remove-orphans
+            docker logout ghcr.io
+            docker image prune -f >/dev/null
+
+            echo "--- services ---"
+            docker compose ps
+            echo "--- migrate ---"
+            docker compose logs --no-log-prefix migrate | tail -n 5
