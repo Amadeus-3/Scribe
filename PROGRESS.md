@@ -75,10 +75,10 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [ ] Feedback summary (Spec §6.9); coverage ≥ 80% on `packages/core`
 - [ ] Acceptance: live counts + MTD spend; over-budget pauses work + alerts; headers verified; coverage met
 
-## Phase 8 — Docs, polish, deploy · status: pending
+## Phase 8 — Docs, polish, deploy · status: partial
 
-- [ ] README (setup/run/deploy/rotate/rollback); finalized CLAUDE.md; a11y pass (WCAG 2.1 AA)
-- [ ] Production self-host deploy (Docker) w/ migrations; runbook for common failures
+- [~] README (run + deploy pointers) ✓; **pending:** rotate/rollback detail beyond docs/deploy.md, finalized CLAUDE.md, a11y pass
+- [~] Production self-host deploy: `docker-compose.prod.yml` (GHCR image, Caddy TLS, Inngest `start`, one-shot migrate) + `.github/workflows/deploy.yml` (build → GHCR → SSH redeploy after green CI on main) + runbook `docs/deploy.md`. **Pending:** first real deploy on the owner's VPS
 - [ ] Acceptance: new dev sets up from README; full keyword→published cycle vs real test CMS with real approval; a11y audit passes
 
 ---
@@ -133,3 +133,5 @@ deviation here with a reason.
 - **Inngest could never fire locally, silently (infra fix):** `docker-compose.yml` pointed the dev server at `http://worker:3100/api/inngest`, which only resolves inside the compose network — but the documented fast path is `docker compose up -d postgres inngest` + `pnpm dev`, where no worker container exists. Registration is *inbound*, and crons only fire for registered functions, so **zero functions registered and the dev UI simply showed no apps**. A second, opposite failure: compose publishes the dev server on host 8289 while the SDK's dev default is 8288, so host-run `inngest.send()` posted into the void. Fixed with `host.docker.internal:4100` (the worker's published port in *both* modes) plus `extra_hosts` for Linux parity, and `INNGEST_DEV=http://localhost:8289` in `.env.example`.
 
 - **No brief stage (conscious deviation):** CLAUDE.md describes keyword→brief→draft, but no code has ever written a `Brief`; the model, `BriefStatus`, `Site.briefAutoApprove` and `briefs_per_run` are all unused. `generateArticleDraft` goes keyword→draft in one call, so the autopilot does too. Recorded here so it is not mistaken for an oversight.
+
+- **Production deploy path (Phase 8):** a single Ubuntu VPS running `docker-compose.prod.yml`. CI builds the image on GitHub and pushes it to GHCR (`ghcr.io/<owner>/scribe:sha-<commit>` + `:latest`); the **Deploy** workflow chains on `workflow_run` of CI for `main`/`master`, so a red CI never ships, then scp's the compose file + Caddyfile and SSHes in to pull, migrate (one-shot `migrate` service via `depends_on: service_completed_successfully`) and `up -d`. The VPS never runs `next build`. The release tag is pinned into `/opt/scribe/.env` (`IMAGE`/`IMAGE_TAG`) so a manual `docker compose up -d` restarts the same image rather than drifting to `:latest`; rollback is editing that tag. Caddy terminates TLS (Let's Encrypt) and is the only published service besides SSH; the Inngest UI (no auth) binds to `127.0.0.1:8288` and is reached over an SSH tunnel. Inngest runs `inngest start` with SQLite persistence on a volume and the same `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY` (hex) the SDK uses, syncing the worker via `--sdk-url http://worker:3100/api/inngest`; `INNGEST_DEV=0` is forced in compose so a copied dev `.env` cannot put production into dev mode. The VPS pulls the private GHCR package with the run's ephemeral `GITHUB_TOKEN` (no long-lived registry secret on the box). With no `VPS_HOST` secret the deploy job is skipped and the image is still pushed, so merging is safe before the server exists. Deferred: slim standalone image, external Redis/Postgres for Inngest state, SHA-pinned actions (Phase 7).

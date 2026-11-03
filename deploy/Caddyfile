@@ -1,0 +1,7 @@
+# Reverse proxy + automatic HTTPS for the Scribe dashboard.
+# DOMAIN comes from .env via docker-compose.prod.yml. Point an A record for it
+# at the VPS before the first start, or Let's Encrypt issuance fails.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:4000
+}
