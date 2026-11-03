@@ -6,7 +6,7 @@ import { inngest } from './inngest/client';
 import { functions } from './functions';
 
 const handler = serve({ client: inngest, functions });
-const port = Number(process.env.WORKER_PORT ?? 3100);
+const port = Number(process.env.WORKER_PORT ?? 4100);
 
 createServer(handler).listen(port, () => {
   logger.info({ port }, 'Scribe worker listening (Inngest functions served)');

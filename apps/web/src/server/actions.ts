@@ -12,7 +12,9 @@ import {
   setSiteCredentials,
   getSiteCredentials,
   addKeywords,
+  authorize,
   deleteKeyword,
+  requeueKeyword,
   upsertStyleGuide,
   runSiteDiscovery,
   setGscServiceAccount,
@@ -25,6 +27,10 @@ import {
   OpenRouterError,
   StyleGuideSuggestionError,
   ArticleDraftError,
+  BudgetExceededError,
+  assertWithinBudget,
+  recordUsage,
+  computeTextCostUsd,
   GeminiImageError,
   collectPublicSiteContext,
   fetchOpenRouterTextModels,
@@ -54,6 +60,7 @@ import {
   logger,
   type SettingKey,
 } from '@scribe/core';
+import { emitArticleApproved, emitTickRequested } from './publish-events';
 import { requireActor } from '@/lib/session';
 
 export type FormState = { ok: boolean; error?: string; message?: string };
@@ -62,6 +69,10 @@ function toState(action: string, e: unknown): FormState {
   if (e instanceof AuthorizationError) {
     logger.warn({ action, errorType: 'AuthorizationError' }, 'server action denied');
     return { ok: false, error: 'You are not permitted to perform this action.' };
+  }
+  if (e instanceof BudgetExceededError) {
+    logger.warn({ action, scope: e.scope, spentUsd: e.spentUsd }, 'AI budget reached');
+    return { ok: false, error: e.message };
   }
   if (e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError') {
     const issues = (e as { issues?: Array<{ message: string }> }).issues ?? [];
@@ -109,6 +120,8 @@ export async function createSiteAction(_prev: FormState, formData: FormData): Pr
       briefAutoApprove: formData.get('briefAutoApprove') === 'on',
       gscPropertyUrl: optStr(formData.get('gscPropertyUrl')),
       discoveryEnabled: formData.get('discoveryEnabled') === 'on',
+      autopilotEnabled: formData.get('autopilotEnabled') === 'on',
+      autopilotArticlesPerWeek: numFromForm(formData.get('autopilotArticlesPerWeek')) ?? null,
     });
     revalidatePath('/sites');
     return { ok: true, message: 'Site created.' };
@@ -130,6 +143,8 @@ export async function updateSiteAction(_prev: FormState, formData: FormData): Pr
       briefAutoApprove: formData.get('briefAutoApprove') === 'on',
       gscPropertyUrl: optStr(formData.get('gscPropertyUrl')),
       discoveryEnabled: formData.get('discoveryEnabled') === 'on',
+      autopilotEnabled: formData.get('autopilotEnabled') === 'on',
+      autopilotArticlesPerWeek: numFromForm(formData.get('autopilotArticlesPerWeek')) ?? null,
     });
     revalidatePath(`/sites/${id}`);
     revalidatePath('/sites');
@@ -254,6 +269,39 @@ export async function deleteKeywordAction(formData: FormData): Promise<void> {
   revalidatePath(`/sites/${siteId}`);
 }
 
+/**
+ * Put a keyword the autopilot gave up on back in the queue.
+ *
+ * Void-returning to match the sibling Remove button's plain-form usage.
+ */
+export async function requeueKeywordAction(formData: FormData): Promise<void> {
+  const actor = await requireActor();
+  authorize(actor, 'keyword.create');
+  const id = str(formData.get('id'));
+  const siteId = str(formData.get('siteId'));
+  await requeueKeyword(prisma, actor, id);
+  revalidatePath(`/sites/${siteId}`);
+}
+
+/**
+ * Ask the autopilot to evaluate immediately rather than waiting for the next
+ * tick. Grants no publish authority: the tick can only draft.
+ */
+export async function runAutopilotNowAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    authorize(actor, 'article.create');
+    const siteId = str(formData.get('siteId'));
+    await emitTickRequested({ actorId: actor.id, ...(siteId ? { siteId } : {}) });
+    return { ok: true, message: 'Autopilot run requested.' };
+  } catch (e) {
+    return toState('autopilot.runNow', e);
+  }
+}
+
 export async function discoverKeywordsAction(
   _prev: FormState,
   formData: FormData,
@@ -339,13 +387,22 @@ export async function suggestStyleGuideAction(
     const settings = await getSettingsForActor(prisma, actor);
     const apiKey = await getOpenRouterApiKey(prisma, actor);
     const context = await collectPublicSiteContext({ baseUrl: site.baseUrl });
-    const suggestion = await suggestStyleGuideWithOpenRouter({
+
+    await assertWithinBudget(prisma, {});
+    const { suggestion, usage } = await suggestStyleGuideWithOpenRouter({
       apiKey,
       model: settings.models.brief,
       siteName: site.name,
       siteUrl: site.baseUrl,
       siteText: context.combinedText,
       notes,
+    });
+    await recordUsage(prisma, {
+      provider: 'openrouter',
+      model: settings.models.brief,
+      purpose: 'style_guide',
+      usage,
+      costUsd: computeTextCostUsd(settings.pricing, settings.models.brief, usage),
     });
 
     await upsertStyleGuide(prisma, actor, siteId, suggestion);
@@ -566,10 +623,25 @@ export async function approveArticleAction(
   try {
     const actor = await requireActor();
     const id = str(formData.get('id'));
-    await approveArticle(prisma, actor, id);
+    const result = await approveArticle(prisma, actor, id, { emit: emitArticleApproved });
     revalidatePath('/articles');
     revalidatePath(`/articles/${id}`);
-    return { ok: true, message: 'Article approved.' };
+
+    // The approval always stands; only the publishing half can degrade, and the
+    // reviewer is told exactly how so they can use the Publish button.
+    switch (result.publish) {
+      case 'queued':
+        return { ok: true, message: 'Article approved. Publishing to the CMS now.' };
+      case 'blocked_preconditions':
+        return {
+          ok: true,
+          message: `Article approved, but not published: ${result.publishNote}`,
+        };
+      case 'emit_failed':
+        return { ok: true, message: `Article approved. ${result.publishNote}` };
+      default:
+        return { ok: true, message: 'Article approved.' };
+    }
   } catch (e) {
     return toState('article.approve', e);
   }
@@ -740,7 +812,51 @@ const NUMERIC_SETTINGS: SettingKey[] = [
   'keyword_buffer_target',
   'briefs_per_run',
   'max_regen',
+  'autopilot_articles_per_week',
+  'autopilot_min_spacing_minutes',
+  'autopilot_max_unreviewed',
+  'autopilot_max_concurrent_drafts',
+  'autopilot_max_inline_images',
+  'autopilot_budget_reserve_pct',
+  'autopilot_stale_claim_minutes',
+  'autopilot_keyword_buffer_low_water',
+  'review_digest_hour_utc',
+  'review_digest_min_articles',
 ];
+
+/**
+ * Booleans need their own pass and cannot join the numeric loop: an unchecked
+ * HTML checkbox submits NOTHING, so absence has to be written as an explicit
+ * `false` rather than skipped like a blank number field.
+ */
+const BOOLEAN_SETTINGS: SettingKey[] = [
+  'discovery_cron_enabled',
+  'autopilot_enabled',
+  'autopilot_generate_hero_image',
+  'autopilot_generate_inline_images',
+  'autopilot_assign_taxonomy',
+  'review_digest_enabled',
+];
+
+/**
+ * Parse a numeric form field, or undefined when it is blank or unparseable.
+ * `Number('abc')` is NaN, which Zod rejects with a raw ZodError that would
+ * surface at the user and fail the whole save over one stray character.
+ */
+function numFromForm(value: FormDataEntryValue | null): number | undefined {
+  const raw = str(value);
+  if (raw === '') return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Split a comma/newline separated email list, dropping blanks. */
+function parseEmailList(raw: string): string[] {
+  return raw
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
 
 export async function updateSettingsAction(
   _prev: FormState,
@@ -749,9 +865,12 @@ export async function updateSettingsAction(
   try {
     const actor = await requireActor();
     for (const key of NUMERIC_SETTINGS) {
-      const raw = str(formData.get(key));
-      if (raw === '') continue;
-      await updateSetting(prisma, actor, key, Number(raw));
+      const value = numFromForm(formData.get(key));
+      if (value === undefined) continue;
+      await updateSetting(prisma, actor, key, value);
+    }
+    for (const key of BOOLEAN_SETTINGS) {
+      await updateSetting(prisma, actor, key, formData.get(key) === 'on');
     }
     const models = {
       brief: str(formData.get('models.brief')),
@@ -768,12 +887,34 @@ export async function updateSettingsAction(
         model: imageModel,
       });
     }
-    await updateSetting(
-      prisma,
-      actor,
-      'discovery_cron_enabled',
-      formData.get('discovery_cron_enabled') === 'on',
-    );
+    // Nested objects and arrays need bespoke assembly, like `models` above.
+    const startHour = numFromForm(formData.get('autopilot_run_window.startHour'));
+    const endHour = numFromForm(formData.get('autopilot_run_window.endHour'));
+    const tzOffset = numFromForm(formData.get('autopilot_run_window.timezoneOffsetMinutes'));
+    if (startHour !== undefined || endHour !== undefined || tzOffset !== undefined) {
+      const days = formData
+        .getAll('autopilot_run_window.daysOfWeek')
+        .map((entry) => Number(str(entry)))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+      await updateSetting(prisma, actor, 'autopilot_run_window', {
+        daysOfWeek: days,
+        startHour: startHour ?? 0,
+        endHour: endHour ?? 24,
+        timezoneOffsetMinutes: tzOffset ?? 0,
+      });
+    }
+
+    const recipientsRaw = formData.get('review_digest_recipients');
+    if (recipientsRaw !== null) {
+      // Zod's .email() rejects malformed entries, surfaced via toState.
+      await updateSetting(
+        prisma,
+        actor,
+        'review_digest_recipients',
+        parseEmailList(str(recipientsRaw)),
+      );
+    }
+
     revalidatePath('/settings');
     return { ok: true, message: 'Settings saved.' };
   } catch (e) {

@@ -128,6 +128,10 @@ export const SiteInputSchema = z.object({
     }),
   // Opt this site into the weekly trending-topic discovery cron.
   discoveryEnabled: z.boolean().default(false),
+  // Opt this site into autopilot drafting (the global switch is also required).
+  autopilotEnabled: z.boolean().default(false),
+  // Per-site weekly target; null inherits the global setting.
+  autopilotArticlesPerWeek: z.number().int().nonnegative().max(100).nullable().default(null),
 });
 export type SiteInput = z.infer<typeof SiteInputSchema>;
 

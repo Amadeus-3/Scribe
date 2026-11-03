@@ -51,7 +51,19 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
   const canRequestChanges = can(actor.role, 'article.requestChanges');
   const canReject = can(actor.role, 'article.reject');
   const canPublish = can(actor.role, 'article.publish');
-  const publishable = article.status === 'APPROVED' || article.status === 'PUBLISH_FAILED';
+  // Approving now publishes, so the Publish button is the RECOVERY path rather
+  // than the happy path: it appears when a publish failed, or when an approved
+  // article has no successful/in-flight publish for its current version (the
+  // event never landed, or Inngest was down).
+  const settledForVersion = publishRecords.some(
+    (record) =>
+      record.idempotencyKey === `publish:${article.id}:${article.currentVersion}` &&
+      (record.status === 'success' || record.status === 'pending'),
+  );
+  const publishable =
+    article.status === 'PUBLISH_FAILED' ||
+    (article.status === 'APPROVED' && !settledForVersion);
+  const approveLabel = canPublish ? 'Approve & publish' : 'Approve';
   const imageSrc =
     article.imageMimeType && article.imageDataBase64
       ? `data:${article.imageMimeType};base64,${article.imageDataBase64}`
@@ -154,11 +166,15 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
         <div className="grid content-start gap-4">
           <Card
             title="Review actions"
-            description="Approve the draft when the article, metadata, taxonomy, and image prompt are ready."
+            description={
+              canPublish
+                ? 'Approving publishes the article to the CMS as a draft.'
+                : 'Approve the draft when the article, metadata, taxonomy, and image prompt are ready.'
+            }
           >
             <div className="grid gap-3">
               {canApprove ? (
-                <ActionForm action={approveArticleAction} submitLabel="Approve">
+                <ActionForm action={approveArticleAction} submitLabel={approveLabel}>
                   <input type="hidden" name="id" value={article.id} />
                 </ActionForm>
               ) : null}
@@ -276,7 +292,15 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
                 <dt className="text-xs text-muted">Latest attempt</dt>
                 <dd>
                   {latestPublishRecord ? (
-                    <Badge tone={latestPublishRecord.status === 'success' ? 'ok' : 'danger'}>
+                    <Badge
+                      tone={
+                        latestPublishRecord.status === 'success'
+                          ? 'ok'
+                          : latestPublishRecord.status === 'pending'
+                            ? 'warn'
+                            : 'danger'
+                      }
+                    >
                       {latestPublishRecord.status}
                     </Badge>
                   ) : (
