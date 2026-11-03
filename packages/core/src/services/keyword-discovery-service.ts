@@ -1,7 +1,13 @@
 import type { Prisma, PrismaClient, SearchIntent } from '@prisma/client';
 import { authorize, type Actor } from '../auth/authorize';
+import { auditActorFields } from '../auth/system-actor';
 import { recordAudit } from '../audit/audit-log';
 import { getSettings } from '../domain/settings';
+import {
+  assertWithinBudget,
+  computeTextCostUsd,
+  recordUsage,
+} from '../cost/usage';
 import { logger } from '../observability/logger';
 import {
   DEFAULT_DISCOVERY_LIMITS,
@@ -10,23 +16,13 @@ import {
   type DiscoveryContext,
   type DiscoveryFetch,
   type DiscoveryResolveHost,
+  type DiscoveryUsageSink,
   type KeywordSource,
 } from '../keyword-sources/types';
 import { resolveSiteTopics, buildNicheDescription } from '../keyword-sources/site-topics';
 import { runDiscovery } from '../keyword-sources/run-discovery';
 import { DEFAULT_KEYWORD_SOURCES } from '../keyword-sources/sources';
 import { getGscServiceAccount, getOpenRouterApiKey } from './provider-credential-service';
-
-/**
- * Sentinel actor for cron/system-triggered discovery. Has ADMIN authority for
- * the authorize() check but is recorded in the audit log as actorType 'system'
- * with a null actorId (Spec §10.1.6) — never attributed to a human.
- */
-export const SYSTEM_ACTOR: Actor = { id: 'system', role: 'ADMIN' };
-
-function isSystemActor(actor: Actor): boolean {
-  return actor.id === SYSTEM_ACTOR.id;
-}
 
 export interface EnqueueDiscoveredKeywordsInput {
   siteId: string;
@@ -76,8 +72,7 @@ export async function enqueueDiscoveredKeywords(
   const bySource: Record<string, number> = {};
   for (const k of fresh) bySource[k.source] = (bySource[k.source] ?? 0) + 1;
 
-  const actorType = isSystemActor(actor) ? 'system' : 'human';
-  const actorId = isSystemActor(actor) ? null : actor.id;
+  const { actorId, actorType } = auditActorFields(actor);
 
   if (fresh.length === 0) {
     await db.$transaction(async (tx) => {
@@ -158,6 +153,10 @@ export async function runSiteDiscovery(
   const topics = resolveSiteTopics(site.styleGuide);
   const nicheDescription = buildNicheDescription(topics, site.styleGuide);
   const settings = await getSettings(db);
+
+  // Budget guard — discovery uses paid LLM calls (relevance + web search).
+  await assertWithinBudget(db, {});
+
   const [serviceAccount, openRouterKey] = await Promise.all([
     getGscServiceAccount(db, actor, 'keyword.create').catch(() => undefined),
     getOpenRouterApiKey(db, actor).catch(() => undefined),
@@ -165,6 +164,10 @@ export async function runSiteDiscovery(
 
   const fetchFn: DiscoveryFetch =
     options.fetchFn ?? (fetch as unknown as DiscoveryFetch);
+
+  // Collect per-call usage during discovery, then record it after the run.
+  const usageEntries: Array<Parameters<DiscoveryUsageSink>[0]> = [];
+  const onUsage: DiscoveryUsageSink = (entry) => usageEntries.push(entry);
 
   const ctx: DiscoveryContext = {
     site: {
@@ -185,6 +188,7 @@ export async function runSiteDiscovery(
           apiKey: openRouterKey,
           relevanceModel: settings.models.qa,
           webModel: settings.models.draft,
+          onUsage,
         }
       : undefined,
     limits: DEFAULT_DISCOVERY_LIMITS,
@@ -193,6 +197,25 @@ export async function runSiteDiscovery(
   const discovery = await runDiscovery(ctx, options.sources ?? DEFAULT_KEYWORD_SOURCES, {
     maxTotal: settings.keyword_buffer_target,
   });
+
+  // Record discovery LLM spend (best-effort — never blocks enqueueing).
+  for (const entry of usageEntries) {
+    try {
+      await recordUsage(db, {
+        provider: 'openrouter',
+        model: entry.model,
+        purpose: entry.purpose,
+        usage: entry.usage,
+        costUsd: computeTextCostUsd(settings.pricing, entry.model, entry.usage),
+      });
+    } catch (e) {
+      logger.warn(
+        { errorMessage: e instanceof Error ? e.message : 'unknown' },
+        'failed to record discovery usage',
+      );
+    }
+  }
+
   const enqueue = await enqueueDiscoveredKeywords(db, actor, {
     siteId,
     keywords: discovery.keywords,

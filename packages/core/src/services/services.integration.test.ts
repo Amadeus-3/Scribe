@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { getTestPrisma, truncateAll } from '../test/db';
 import { AuthorizationError, type Actor } from '../auth/authorize';
+import { BudgetExceededError } from '../cost/usage';
 import {
   approveArticle,
   autoAssignArticleTaxonomy,
@@ -1046,7 +1047,10 @@ describe('article draft generation', () => {
     const changes = await requestArticleChanges(db, admin, article.id, 'Needs more examples.');
     expect(changes.status).toBe('CHANGES_REQUESTED');
     const approved = await approveArticle(db, admin, article.id);
-    expect(approved.status).toBe('APPROVED');
+    expect(approved.article.status).toBe('APPROVED');
+    // No emitter supplied, so approval is a pure state change and nothing
+    // reaches the CMS on its own.
+    expect(approved.publish).toBe('not_configured');
 
     const publishFetch = async () => ({
       ok: true,
@@ -1173,5 +1177,100 @@ describe('keyword discovery (Phase 6)', () => {
     const guide = await db.styleGuide.findUnique({ where: { siteId: site.id } });
     expect(guide?.topicPillars).toEqual(['home espresso']);
     expect(guide?.geo).toBe('US');
+  });
+});
+
+describe('usage + budget (cost accounting, Spec §7.4 / §10.7)', () => {
+  const draftFetch = (usage?: Record<string, unknown>) => async () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => ({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              title: 'How to Build Wealth',
+              slug: 'how-to-build-wealth',
+              metaDescription: 'Learn practical steps to build wealth on any income today.',
+              contentMarkdown: `# How to Build Wealth\n\n${'Useful finance guidance. '.repeat(80)}`,
+              imagePrompt: 'Editorial personal finance planning scene.',
+            }),
+          },
+        },
+      ],
+      ...(usage ? { usage } : {}),
+    }),
+    text: async () => '',
+  });
+
+  it('records a UsageRecord and per-article cost for a draft', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    const article = await generateArticleDraft(
+      db,
+      admin,
+      { siteId: site.id, keyword: 'how to build wealth' },
+      {
+        apiKey: 'openrouter-key',
+        // Default draft model '~anthropic/claude-sonnet-latest' priced at 3/15 per MTok.
+        fetchFn: draftFetch({ prompt_tokens: 100_000, completion_tokens: 20_000 }),
+      },
+    );
+
+    const usage = await db.usageRecord.findFirst({
+      where: { articleId: article.id, purpose: 'draft' },
+    });
+    expect(usage).not.toBeNull();
+    expect(usage?.provider).toBe('openrouter');
+    expect(usage?.inputTokens).toBe(100_000);
+    expect(usage?.outputTokens).toBe(20_000);
+    // (100_000*3 + 20_000*15) / 1e6 = 0.6
+    expect(Number(usage?.costUsd)).toBeCloseTo(0.6, 4);
+
+    const row = await db.article.findUnique({
+      where: { id: article.id },
+      select: { costUsd: true },
+    });
+    expect(Number(row?.costUsd)).toBeCloseTo(0.6, 4);
+  });
+
+  it('blocks generation (without calling the provider) once the monthly budget is reached', async () => {
+    const site = await createSite(db, admin, siteInput);
+    await upsertStyleGuide(db, admin, site.id, {
+      systemPrompt: 'Write practical articles.',
+      bannedPhrases: [],
+    });
+
+    await updateSetting(db, admin, 'monthly_budget_usd', 0.01);
+    await db.usageRecord.create({
+      data: {
+        provider: 'openrouter',
+        model: 'm',
+        purpose: 'draft',
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 1,
+      },
+    });
+
+    const fetchSpy = vi.fn(draftFetch({ prompt_tokens: 10, completion_tokens: 10 }));
+
+    await expect(
+      generateArticleDraft(
+        db,
+        admin,
+        { siteId: site.id, keyword: 'how to build wealth' },
+        { apiKey: 'openrouter-key', fetchFn: fetchSpy },
+      ),
+    ).rejects.toBeInstanceOf(BudgetExceededError);
+
+    // The guard runs before the paid call — the provider must not be hit.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await listSiteArticles(db, admin, site.id)).toHaveLength(0);
   });
 });
