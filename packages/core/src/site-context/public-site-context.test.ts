@@ -43,7 +43,7 @@ describe('collectPublicSiteContext', () => {
     }));
 
     const context = await collectPublicSiteContext({
-      baseUrl: 'https://wiselyrich.example',
+      baseUrl: 'https://blog.example',
       fetchFn,
       resolveHost: async () => [{ address: '93.184.216.34', family: 4 }],
     });

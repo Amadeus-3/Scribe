@@ -9,7 +9,7 @@ describe('buildStyleGuideSuggestionMessages', () => {
   it('includes site context and image prompt requirements', () => {
     const messages = buildStyleGuideSuggestionMessages({
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       siteText: 'Personal finance education.',
       notes: 'Focus on beginners.',
     });
@@ -49,7 +49,7 @@ describe('suggestStyleGuideWithOpenRouter', () => {
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       siteText: 'Finance education.',
       fetchFn,
     });
@@ -70,7 +70,7 @@ describe('suggestStyleGuideWithOpenRouter', () => {
       suggestStyleGuideWithOpenRouter({
         model: 'openai/gpt-4o-mini',
         siteName: 'Wisely Rich',
-        siteUrl: 'https://wiselyrich.com',
+        siteUrl: 'https://example.com',
         siteText: '',
       }),
     ).rejects.toThrow(StyleGuideSuggestionError);
