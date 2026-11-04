@@ -1,8 +1,12 @@
 import { signIn } from '@/auth';
+import { countUsers, prisma } from '@scribe/core';
 
 export const metadata = { title: 'Sign in — Scribe' };
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  // A fresh instance explains itself: the first email in becomes the admin.
+  const isFreshInstance = (await countUsers(prisma)) === 0;
+
   async function sendMagicLink(formData: FormData) {
     'use server';
     const email = String(formData.get('email') ?? '').trim();
@@ -25,9 +29,13 @@ export default function LoginPage() {
         action={sendMagicLink}
         style={{ width: 360, maxWidth: '90vw', display: 'grid', gap: 12 }}
       >
-        <h1 style={{ fontSize: '1.25rem', margin: 0 }}>Scribe</h1>
+        <h1 style={{ fontSize: '1.25rem', margin: 0 }}>
+          {isFreshInstance ? 'Create the first admin account' : 'Scribe'}
+        </h1>
         <p style={{ color: '#9a9aa2', margin: 0, fontSize: '0.9rem' }}>
-          Sign in with a magic link. Only allowlisted emails are accepted.
+          {isFreshInstance
+            ? 'This instance has no accounts yet. The first email to sign in becomes the administrator and can invite the rest of the team.'
+            : 'Sign in with a magic link. Access is by invitation; ask an admin if you need an account.'}
         </p>
         <input
           name="email"
