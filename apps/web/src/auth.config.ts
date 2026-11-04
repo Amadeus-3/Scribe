@@ -10,7 +10,7 @@ export const authConfig = {
   // Self-hosted behind a reverse proxy / Docker — trust the incoming host so
   // both the middleware instance and the full auth.ts instance accept it.
   trustHost: true,
-  pages: { signIn: '/login', verifyRequest: '/login/verify' },
+  pages: { signIn: '/login', verifyRequest: '/login/verify', error: '/login' },
   providers: [],
   callbacks: {
     authorized({ auth, request }) {
