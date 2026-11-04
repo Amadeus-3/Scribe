@@ -36,6 +36,9 @@ export const REDACT_PATHS: string[] = [
   'INNGEST_SIGNING_KEY',
   'INNGEST_EVENT_KEY',
   'EMAIL_SERVER',
+  // Dashboard SMTP config (the URL carries the password)
+  'serverUrl',
+  '*.serverUrl',
   'GSC_SERVICE_ACCOUNT_JSON',
   // Domain secrets
   'cmsCredentials',
