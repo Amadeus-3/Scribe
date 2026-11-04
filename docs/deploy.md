@@ -39,7 +39,8 @@ Install Docker Engine + Compose plugin (official repo):
 curl -fsSL https://get.docker.com | sh
 ```
 
-Firewall: SSH, HTTP, HTTPS only.
+Firewall: SSH, HTTP, HTTPS only. (Skip if the box already serves other sites;
+these are open.)
 
 ```bash
 ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp && ufw --force enable
@@ -124,12 +125,50 @@ No registry secret is needed. The workflow pushes to GitHub Container Registry
 with the built-in `GITHUB_TOKEN` and hands the VPS that same short-lived token
 to pull.
 
-## 6. First deploy
+## 6. Reverse proxy
+
+Pick one.
+
+### A. The host already runs nginx (default)
+
+This is the case when the VPS serves other sites: nginx owns ports 80/443, so
+Scribe's web container binds to `127.0.0.1:4010` and nginx forwards to it.
+
+```bash
+sudo curl -fsSL https://raw.githubusercontent.com/Amadeus-3/Scribe/main/deploy/nginx-scribe.conf -o /etc/nginx/sites-available/scribe
+```
+
+If the repo is private that URL needs a token; instead paste
+`deploy/nginx-scribe.conf` into `/etc/nginx/sites-available/scribe` by hand.
+Edit `server_name` if your domain differs, then:
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/scribe /etc/nginx/sites-enabled/scribe && sudo nginx -t && sudo systemctl reload nginx
+```
+
+Issue the certificate (certbot rewrites the file to add the 443 listener):
+
+```bash
+sudo certbot --nginx -d scribe.wiselyrich.com --redirect
+```
+
+If `certbot` is missing: `sudo apt-get install -y certbot python3-certbot-nginx`.
+The upstream returns 502 until the first deploy starts the container; that is
+fine, certbot only needs port 80 on the hostname.
+
+### B. Nothing else on 80/443: bundled Caddy
+
+Add `COMPOSE_PROFILES=caddy` to `/opt/scribe/.env`. Caddy publishes 80/443,
+gets a Let's Encrypt certificate for `DOMAIN` automatically, and proxies to
+web. Nothing to install on the host.
+
+## 7. First deploy
 
 Merge or push to `main`. CI runs; when it passes, **Deploy** runs:
 
 1. builds the image and pushes `ghcr.io/<owner>/scribe:sha-<commit>` and `:latest`;
-2. copies `docker-compose.prod.yml` and `deploy/Caddyfile` to `/opt/scribe`;
+2. copies `docker-compose.prod.yml` and `deploy/Caddyfile` to `/opt/scribe`
+   (the Caddyfile is inert unless the `caddy` profile is on);
 3. pins the image tag in `.env`, pulls, runs migrations, restarts the stack.
 
 Or trigger it by hand: Actions → Deploy → Run workflow.
@@ -137,7 +176,7 @@ Or trigger it by hand: Actions → Deploy → Run workflow.
 Then open `https://your-domain`, enter an allowlisted email, click the link.
 The first account becomes ADMIN.
 
-## 7. Verify the pipeline is alive
+## 8. Verify the pipeline is alive
 
 Inngest's UI is bound to the server's loopback only (it has no auth). Tunnel in:
 
@@ -205,8 +244,14 @@ sudo apt-get update && sudo apt-get upgrade -y && docker compose pull && docker 
 
 ## Troubleshooting
 
-- **Caddy: certificate errors / site unreachable.** DNS must resolve to the VPS
-  and ports 80 + 443 must be open before Caddy starts. `docker compose logs caddy`.
+- **502 from nginx.** The web container is not up or `WEB_BIND_PORT` in `.env`
+  does not match `proxy_pass` in the nginx server block. `docker compose ps`,
+  then `curl -I http://127.0.0.1:4010`.
+- **Sign-in link points at http:// or loops.** nginx must send
+  `X-Forwarded-Proto` (it does in `deploy/nginx-scribe.conf`) and `DOMAIN` in
+  `.env` must match the host you browse to.
+- **Caddy (profile B): certificate errors / site unreachable.** DNS must resolve
+  to the VPS and ports 80 + 443 must be free and open. `docker compose logs caddy`.
 - **Sign-in email never arrives.** `docker compose logs web | grep -i email`.
   Check `EMAIL_SERVER` syntax and that the provider allows the `EMAIL_FROM`
   domain. The address must also be in `ALLOWED_SIGNIN_EMAILS`.

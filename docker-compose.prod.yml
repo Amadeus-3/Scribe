@@ -3,8 +3,10 @@
 # Differences from docker-compose.yml (the local run path):
 #   - no `build:` — web/worker/migrate run the image CI pushed to GHCR
 #   - Inngest runs `inngest start` (persistent, signed) instead of `inngest dev`
-#   - Caddy terminates TLS (automatic Let's Encrypt) and proxies to web
-#   - nothing but 80/443 is published; Inngest UI only on 127.0.0.1 (SSH tunnel)
+#   - web is published on 127.0.0.1:${WEB_BIND_PORT} for the HOST's reverse
+#     proxy (nginx + certbot, deploy/nginx-scribe.conf). Caddy is an opt-in
+#     profile for a box with nothing else on 80/443
+#   - Inngest UI only on 127.0.0.1 (SSH tunnel)
 #   - no Mailpit: EMAIL_SERVER must point at a real SMTP provider
 #
 # On the VPS this file lives at /opt/scribe/docker-compose.yml next to `.env`
@@ -61,8 +63,11 @@ services:
       # `article.approved` and manual ticks here; never the dev server.
       INNGEST_DEV: '0'
       INNGEST_BASE_URL: http://inngest:8288
-    expose:
-      - '4000'
+    ports:
+      # Loopback only. The host's reverse proxy (nginx — see deploy/nginx-scribe.conf)
+      # terminates TLS and forwards to this port; nothing reaches it directly
+      # from the internet. Change WEB_BIND_PORT in .env if 4010 is taken.
+      - '127.0.0.1:${WEB_BIND_PORT:-4010}:4000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,7 +128,11 @@ services:
       worker:
         condition: service_started
 
+  # OPT-IN (COMPOSE_PROFILES=caddy in .env): bundled TLS + reverse proxy for a
+  # box with nothing else on 80/443. The default assumes the host already runs
+  # nginx (or another proxy) and forwards to web's loopback port instead.
   caddy:
+    profiles: [caddy]
     image: caddy:2
     container_name: scribe-caddy
     restart: unless-stopped
