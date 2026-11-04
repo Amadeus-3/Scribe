@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 3000;
+const PORT = 4000;
 const baseURL = `http://localhost:${PORT}`;
 
 // E2E harness for the human-approval gate (Spec §13, exercised from Phase 3).

@@ -4,13 +4,14 @@ import { z } from 'zod';
 export const KeywordTermSchema = z.string().trim().min(1).max(200);
 
 /**
- * Parse a pasted seed list (newline-separated) into unique, trimmed terms.
+ * Parse a pasted seed list into unique, trimmed terms. Split on BOTH newlines
+ * and commas so a pasted "a, b, c" cluster becomes three keywords (not one).
  * De-duplication is case-insensitive; the first-seen casing is kept.
  */
 export function parseKeywordSeedList(raw: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const line of raw.split('\n')) {
+  for (const line of raw.split(/[\n,]/)) {
     const term = line.trim();
     if (!term) continue;
     const key = term.toLowerCase();

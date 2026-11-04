@@ -10,7 +10,18 @@ import {
   can,
 } from '@scribe/core';
 import { requireActor } from '@/lib/session';
-import { PageHeader, Card, Field, Badge, inputClass } from '@/components/ui';
+import {
+  PageHeader,
+  Card,
+  Field,
+  Badge,
+  Disclosure,
+  EmptyState,
+  StatusBadge,
+  StepList,
+  buttonClass,
+  inputClass,
+} from '@/components/ui';
 import { ActionForm } from '@/components/action-form';
 import {
   updateSiteAction,
@@ -21,8 +32,12 @@ import {
   upsertStyleGuideAction,
   addKeywordsAction,
   deleteKeywordAction,
+  requeueKeywordAction,
+  discoverKeywordsAction,
+  generateFromKeywordAction,
   setSiteStatusAction,
 } from '@/server/actions';
+import { GenerateKeywordButton } from '@/components/generate-keyword-button';
 
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,6 +61,11 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
   const bannedText = Array.isArray(guide?.bannedPhrases)
     ? (guide?.bannedPhrases as string[]).join('\n')
     : '';
+  const topicLines = (value: unknown): string =>
+    Array.isArray(value) ? (value as string[]).filter((v) => typeof v === 'string').join('\n') : '';
+  const pillarsText = topicLines(guide?.topicPillars);
+  const clustersText = topicLines(guide?.topicClusters);
+  const excludedText = topicLines(guide?.excludedTopics);
 
   return (
     <>
@@ -54,15 +74,53 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
         description={site.baseUrl}
         actions={
           <>
-            <Badge tone={site.status === 'ACTIVE' ? 'ok' : 'muted'}>{site.status}</Badge>
-            <Link href="/sites" className="text-sm text-muted hover:text-fg">
-              ← All sites
+            <StatusBadge status={site.status} />
+            <Link href="/sites" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+              All sites
             </Link>
           </>
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <Card
+        title="Set up this site"
+        description="Finish these to start generating and publishing articles."
+        className="mb-4"
+      >
+        <StepList
+          steps={[
+            { label: '1. Site details', description: `${site.cmsType} CMS · ${site.baseUrl}`, done: true },
+            {
+              label: '2. Connect the CMS',
+              description: site.hasCredentials
+                ? 'Credentials saved.'
+                : 'Add the API token + URL below.',
+              done: site.hasCredentials,
+            },
+            {
+              label: '3. Style guide',
+              description: guide ? 'Saved — used for every draft.' : 'Use “Suggest with AI”, then save.',
+              done: Boolean(guide),
+            },
+            {
+              label: '4. Add keywords',
+              description:
+                keywords.length > 0
+                  ? `${keywords.length} in the queue.`
+                  : 'Seed a few, or “Discover trending topics”.',
+              done: keywords.length > 0,
+            },
+            {
+              label: '5. Generate an article',
+              description:
+                articles.length > 0 ? `${articles.length} draft(s).` : 'Pick a keyword and generate.',
+              done: articles.length > 0,
+            },
+          ]}
+        />
+      </Card>
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {canEdit ? (
           <Card title="Details" description="Public website settings and CMS type.">
             <ActionForm action={updateSiteAction} submitLabel="Save details">
@@ -86,6 +144,21 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
+              <Field
+                label="Post URL path prefix"
+                name="articlePathPrefix"
+                hint={`Where your posts live, e.g. /blog → ${site.baseUrl.replace(/\/$/, '')}${
+                  site.articlePathPrefix || '/blog'
+                }/your-post. Leave blank if posts are at the site root. Used to build correct internal links.`}
+              >
+                <input
+                  id="articlePathPrefix"
+                  name="articlePathPrefix"
+                  defaultValue={site.articlePathPrefix ?? ''}
+                  placeholder="/blog"
+                  className={inputClass}
+                />
+              </Field>
               <Field label="Article CMS" name="cmsType">
                 <select
                   id="cmsType"
@@ -105,7 +178,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   name="briefAutoApprove"
@@ -113,6 +186,55 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                 />{' '}
                 Auto-approve briefs
               </label>
+              <Disclosure
+                summary="Trending-topic discovery"
+                hint="optional"
+                defaultOpen={Boolean(site.gscPropertyUrl) || site.discoveryEnabled}
+              >
+                <Field
+                  label="Google Search Console property"
+                  name="gscPropertyUrl"
+                  hint="e.g. sc-domain:example.com or https://example.com/"
+                >
+                  <input
+                    id="gscPropertyUrl"
+                    name="gscPropertyUrl"
+                    defaultValue={site.gscPropertyUrl ?? ''}
+                    placeholder="sc-domain:example.com"
+                    className={inputClass}
+                  />
+                </Field>
+                <label className="flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="discoveryEnabled"
+                    defaultChecked={site.discoveryEnabled}
+                  />{' '}
+                  Include in the weekly auto-discovery run
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="autopilotEnabled"
+                    defaultChecked={site.autopilotEnabled}
+                  />{' '}
+                  Let autopilot draft articles for this site
+                </label>
+                <Field
+                  label="Autopilot articles per week"
+                  name="autopilotArticlesPerWeek"
+                  hint="Leave blank to use the global setting."
+                >
+                  <input
+                    id="autopilotArticlesPerWeek"
+                    name="autopilotArticlesPerWeek"
+                    type="number"
+                    min="0"
+                    defaultValue={site.autopilotArticlesPerWeek ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+              </Disclosure>
             </ActionForm>
             <form action={setSiteStatusAction} className="mt-3 border-t border-border pt-3">
               <input type="hidden" name="id" value={site.id} />
@@ -121,7 +243,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                 name="status"
                 value={site.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'}
               />
-              <button className="rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:text-fg">
+              <button className={buttonClass({ variant: 'secondary', size: 'sm' })}>
                 {site.status === 'ACTIVE' ? 'Pause site' : 'Activate site'}
               </button>
             </form>
@@ -133,14 +255,14 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
             title="WordPress credentials"
             description="Application Password on a least-privilege account. Stored AES-256-GCM encrypted; never shown back."
           >
-            <p className="mb-2 text-xs">
-              Status:{' '}
+            <div className="mb-3 flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted">Status</span>
               {site.hasCredentials ? (
                 <Badge tone="ok">configured</Badge>
               ) : (
-                <Badge tone="muted">not set</Badge>
+                <Badge tone="warn">not set</Badge>
               )}
-            </p>
+            </div>
             <ActionForm action={setCredentialsAction} submitLabel="Save credentials">
               <input type="hidden" name="id" value={site.id} />
               <input type="hidden" name="cmsType" value="WORDPRESS" />
@@ -177,14 +299,14 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
             title="Strapi credentials"
             description="Content API token and collection mapping. Token is encrypted and never shown back."
           >
-            <p className="mb-2 text-xs">
-              Status:{' '}
+            <div className="mb-3 flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted">Status</span>
               {site.hasCredentials ? (
                 <Badge tone="ok">configured</Badge>
               ) : (
-                <Badge tone="muted">not set</Badge>
+                <Badge tone="warn">not set</Badge>
               )}
-            </p>
+            </div>
             <ActionForm action={setCredentialsAction} submitLabel="Save Strapi config">
               <input type="hidden" name="id" value={site.id} />
               <input type="hidden" name="cmsType" value="STRAPI" />
@@ -233,6 +355,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />
                 </Field>
               </div>
+              <Disclosure summary="Field mapping" hint="defaults fit a standard Strapi blog">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Title field" name="fieldMap.title">
                   <input
@@ -262,9 +385,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />
                 </Field>
                 <Field
-                  label="Meta description field"
+                  label="Description field"
                   name="fieldMap.metaDescription"
-                  hint="Optional"
+                  hint="Your Article content type uses description"
                 >
                   <input
                     id="fieldMap.metaDescription"
@@ -274,6 +397,49 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   />
                 </Field>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Image field" name="fieldMap.image" hint="Optional media field">
+                  <input
+                    id="fieldMap.image"
+                    name="fieldMap.image"
+                    defaultValue={credentialSummary.fieldMap.image ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Read time field" name="fieldMap.readTime" hint="Optional">
+                  <input
+                    id="fieldMap.readTime"
+                    name="fieldMap.readTime"
+                    defaultValue={credentialSummary.fieldMap.readTime ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Author field" name="fieldMap.author" hint="Optional">
+                  <input
+                    id="fieldMap.author"
+                    name="fieldMap.author"
+                    defaultValue={credentialSummary.fieldMap.author ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Date field" name="fieldMap.date" hint="Optional">
+                  <input
+                    id="fieldMap.date"
+                    name="fieldMap.date"
+                    defaultValue={credentialSummary.fieldMap.date ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Featured field" name="fieldMap.featured" hint="Optional boolean">
+                  <input
+                    id="fieldMap.featured"
+                    name="fieldMap.featured"
+                    defaultValue={credentialSummary.fieldMap.featured ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+              </Disclosure>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Content format" name="contentFormat">
                   <select
@@ -287,15 +453,19 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                     <option value="STRAPI_BLOCKS">Strapi blocks</option>
                   </select>
                 </Field>
-                <Field label="Create as" name="publicationStatus">
+                <Field
+                  label="When publishing from Scribe"
+                  name="publicationStatus"
+                  hint="Draft creates a Strapi draft that must still be published in Strapi."
+                >
                   <select
                     id="publicationStatus"
                     name="publicationStatus"
                     defaultValue={credentialSummary.publicationStatus}
                     className={inputClass}
                   >
-                    <option value="DRAFT">Draft</option>
-                    <option value="PUBLISHED">Published</option>
+                    <option value="PUBLISHED">Create public published entry</option>
+                    <option value="DRAFT">Create Strapi draft only</option>
                   </select>
                 </Field>
               </div>
@@ -364,6 +534,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
+              <Disclosure summary="Voice, formatting & banned phrases" hint="optional">
               <Field label="Image prompt instructions" name="imagePromptInstructions">
                 <textarea
                   id="imagePromptInstructions"
@@ -408,40 +579,145 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
                   className={inputClass}
                 />
               </Field>
+              </Disclosure>
+              <Disclosure
+                summary="Trending-topic discovery"
+                hint="optional — targets discovery to this niche"
+              >
+              <Field label="Topic pillars" name="topicPillars" hint="Primary niche topics, one per line">
+                <textarea
+                  id="topicPillars"
+                  name="topicPillars"
+                  rows={3}
+                  defaultValue={pillarsText}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Topic clusters" name="topicClusters" hint="Supporting subtopics, one per line">
+                <textarea
+                  id="topicClusters"
+                  name="topicClusters"
+                  rows={3}
+                  defaultValue={clustersText}
+                  className={inputClass}
+                />
+              </Field>
+              <Field
+                label="Excluded topics"
+                name="excludedTopics"
+                hint="Never queue these (off-niche / brand safety), one per line"
+              >
+                <textarea
+                  id="excludedTopics"
+                  name="excludedTopics"
+                  rows={2}
+                  defaultValue={excludedText}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Country (geo)" name="geo" hint="2-letter ISO code for trends, e.g. US">
+                <input
+                  id="geo"
+                  name="geo"
+                  defaultValue={guide?.geo ?? ''}
+                  placeholder="US"
+                  className={inputClass}
+                />
+              </Field>
+              </Disclosure>
             </ActionForm>
           </Card>
         ) : null}
 
-        <Card title={`Keywords (${keywords.length})`} description="Manual seed list for this site.">
+        <Card
+          title={`Keywords (${keywords.length})`}
+          description="Seed list + topics discovered from Google Search Console, Google Trends, and AI web search."
+        >
           {canKw ? (
-            <ActionForm action={addKeywordsAction} submitLabel="Add keywords">
-              <input type="hidden" name="siteId" value={site.id} />
-              <Field label="Seed list" name="terms" hint="One keyword per line; duplicates skipped">
-                <textarea id="terms" name="terms" rows={3} className={inputClass} />
-              </Field>
-            </ActionForm>
+            <div className="grid gap-3">
+              <ActionForm action={addKeywordsAction} submitLabel="Add keywords">
+                <input type="hidden" name="siteId" value={site.id} />
+                <Field
+                  label="Seed list"
+                  name="terms"
+                  hint="One per line or comma-separated; duplicates skipped"
+                >
+                  <textarea id="terms" name="terms" rows={3} className={inputClass} />
+                </Field>
+              </ActionForm>
+              <ActionForm
+                action={discoverKeywordsAction}
+                submitLabel="Discover trending topics"
+                submitVariant="secondary"
+              >
+                <input type="hidden" name="siteId" value={site.id} />
+                <p className="text-xs text-muted">
+                  Pulls GSC opportunities + on-niche Google Trends + AI web search into the queue.
+                  Needs the site&apos;s topics (above) and the GSC/OpenRouter keys in Settings.
+                </p>
+              </ActionForm>
+            </div>
           ) : null}
           <ul className="mt-3 grid gap-1">
             {keywords.length === 0 ? (
-              <li className="text-sm text-muted">No keywords yet.</li>
+              <li>
+                <EmptyState
+                  title="No keywords yet"
+                  description="Add seed keywords, discover trending topics, or type one when generating a draft."
+                />
+              </li>
             ) : (
-              keywords.map((k) => (
-                <li
-                  key={k.id}
-                  className="flex items-center justify-between border-t border-border py-1.5 text-sm"
-                >
-                  <span>
-                    {k.term} <Badge tone="muted">{k.status}</Badge>
-                  </span>
-                  {can(actor.role, 'keyword.delete') ? (
-                    <form action={deleteKeywordAction}>
-                      <input type="hidden" name="id" value={k.id} />
-                      <input type="hidden" name="siteId" value={site.id} />
-                      <button className="text-xs text-muted hover:text-danger">remove</button>
-                    </form>
-                  ) : null}
-                </li>
-              ))
+              keywords.map((k) => {
+                const fromDiscovery = Boolean(k.source) && k.source !== 'manual_seed';
+                return (
+                  <li
+                    key={k.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-t border-border py-2 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-fg" title={k.term}>
+                        {k.term}
+                      </div>
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+                        <StatusBadge status={k.status} />
+                        {fromDiscovery ? (
+                          <Badge tone="default">{k.source?.replaceAll('_', ' ')}</Badge>
+                        ) : null}
+                        {typeof k.discoveryScore === 'number' ? (
+                          <Badge tone="muted">{Math.round(k.discoveryScore * 100)}</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {canGenerateArticle && k.status === 'QUEUED' ? (
+                        <GenerateKeywordButton
+                          action={generateFromKeywordAction}
+                          siteId={site.id}
+                          keyword={k.term}
+                        />
+                      ) : null}
+                      {canKw && k.status === 'SKIPPED' ? (
+                        <form action={requeueKeywordAction}>
+                          <input type="hidden" name="id" value={k.id} />
+                          <input type="hidden" name="siteId" value={site.id} />
+                          <button className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+                            Requeue
+                          </button>
+                        </form>
+                      ) : null}
+                      {can(actor.role, 'keyword.delete') ? (
+                        <form action={deleteKeywordAction}>
+                          <input type="hidden" name="id" value={k.id} />
+                          <input type="hidden" name="siteId" value={site.id} />
+                          <button className={buttonClass({ variant: 'ghost', size: 'sm' })}>
+                            Remove
+                          </button>
+                        </form>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })
             )}
           </ul>
         </Card>
@@ -475,15 +751,20 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
           ) : null}
           <ul className="mt-3 grid gap-1">
             {articles.length === 0 ? (
-              <li className="text-sm text-muted">No articles yet.</li>
+              <li>
+                <EmptyState
+                  title="No articles yet"
+                  description="Generate a draft from a keyword when the site context is ready."
+                />
+              </li>
             ) : (
               articles.map((article) => (
-                <li key={article.id} className="border-t border-border py-2 text-sm">
+                <li key={article.id} className="border-t border-border py-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
-                    <Link href={`/articles/${article.id}`} className="text-accent hover:underline">
+                    <Link href={`/articles/${article.id}`} className="font-medium text-fg hover:text-accent">
                       {article.title ?? 'Untitled article'}
                     </Link>
-                    <Badge tone="muted">{article.status}</Badge>
+                    <StatusBadge status={article.status} />
                   </div>
                   {article.metaDescription ? (
                     <p className="mt-1 line-clamp-2 text-xs text-muted">
@@ -501,7 +782,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
             title="Delete site"
             description="Deletes this site and its related style guide, keywords, articles, and publish records."
           >
-            <ActionForm action={deleteSiteAction} submitLabel="Delete site">
+            <ActionForm action={deleteSiteAction} submitLabel="Delete site" submitVariant="danger">
               <input type="hidden" name="id" value={site.id} />
               <Field label={`Type ${site.name} to confirm`} name="confirmName">
                 <input id="confirmName" name="confirmName" required className={inputClass} />

@@ -30,6 +30,10 @@ export async function upsertStyleGuide(
     formattingRules: data.formattingRules ?? null,
     readingLevel: data.readingLevel ?? null,
     bannedPhrases: data.bannedPhrases as Prisma.InputJsonValue,
+    topicPillars: data.topicPillars as Prisma.InputJsonValue,
+    topicClusters: data.topicClusters as Prisma.InputJsonValue,
+    excludedTopics: data.excludedTopics as Prisma.InputJsonValue,
+    geo: data.geo ?? null,
   };
   return db.$transaction(async (tx) => {
     const guide = await tx.styleGuide.upsert({

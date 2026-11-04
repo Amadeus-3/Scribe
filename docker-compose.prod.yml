@@ -1,0 +1,148 @@
+# Production stack for a single Ubuntu VPS (Phase 8, Decision §18.6).
+#
+# Differences from docker-compose.yml (the local run path):
+#   - no `build:` — web/worker/migrate run the image CI pushed to GHCR
+#   - Inngest runs `inngest start` (persistent, signed) instead of `inngest dev`
+#   - Caddy terminates TLS (automatic Let's Encrypt) and proxies to web
+#   - nothing but 80/443 is published; Inngest UI only on 127.0.0.1 (SSH tunnel)
+#   - no Mailpit: EMAIL_SERVER must point at a real SMTP provider
+#
+# On the VPS this file lives at /opt/scribe/docker-compose.yml next to `.env`
+# (template: deploy/env.production.example). The deploy workflow copies it there
+# and runs `docker compose pull && docker compose up -d` on every green push to
+# main. See docs/deploy.md.
+services:
+  postgres:
+    image: postgres:15
+    container_name: scribe-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scribe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: scribe
+    volumes:
+      - scribe_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U scribe -d scribe']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot: applies committed Prisma migrations, then exits. web/worker wait
+  # for it, so a deploy that ships a migration cannot start app code against an
+  # old schema.
+  migrate:
+    image: ${IMAGE:-ghcr.io/amadeus-3/scribe}:${IMAGE_TAG:-latest}
+    command: ['pnpm', 'db:deploy']
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://scribe:${POSTGRES_PASSWORD}@postgres:5432/scribe?schema=public
+      DIRECT_URL: postgresql://scribe:${POSTGRES_PASSWORD}@postgres:5432/scribe?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  web:
+    image: ${IMAGE:-ghcr.io/amadeus-3/scribe}:${IMAGE_TAG:-latest}
+    container_name: scribe-web
+    command: ['pnpm', '--filter', '@scribe/web', 'start']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      APP_BASE_URL: https://${DOMAIN:?set DOMAIN in .env}
+      AUTH_URL: https://${DOMAIN}
+      NEXTAUTH_URL: https://${DOMAIN}
+      # Behind Caddy: trust the forwarded Host header (Auth.js).
+      AUTH_TRUST_HOST: 'true'
+      DATABASE_URL: postgresql://scribe:${POSTGRES_PASSWORD}@postgres:5432/scribe?schema=public
+      DIRECT_URL: postgresql://scribe:${POSTGRES_PASSWORD}@postgres:5432/scribe?schema=public
+      # Self-hosted Inngest in production (signed) mode. The dashboard sends
+      # `article.approved` and manual ticks here; never the dev server.
+      INNGEST_DEV: '0'
+      INNGEST_BASE_URL: http://inngest:8288
+    expose:
+      - '4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    image: ${IMAGE:-ghcr.io/amadeus-3/scribe}:${IMAGE_TAG:-latest}
+    container_name: scribe-worker
+    command: ['pnpm', '--filter', '@scribe/worker', 'start']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      WORKER_PORT: 3100
+      DATABASE_URL: postgresql://scribe:${POSTGRES_PASSWORD}@postgres:5432/scribe?schema=public
+      DIRECT_URL: postgresql://scribe:${POSTGRES_PASSWORD}@postgres:5432/scribe?schema=public
+      INNGEST_DEV: '0'
+      INNGEST_BASE_URL: http://inngest:8288
+    expose:
+      - '3100'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Self-hosted Inngest server. `start` (not `dev`) persists runs/crons in
+  # SQLite on a volume and requires the event + signing keys the SDK also uses.
+  # It syncs the worker's functions by fetching --sdk-url; crons only fire for
+  # synced functions, so if `docker compose logs inngest` shows sync errors the
+  # autopilot is silently off.
+  inngest:
+    image: inngest/inngest:latest
+    container_name: scribe-inngest
+    restart: unless-stopped
+    command:
+      - inngest
+      - start
+      - --sdk-url
+      - http://worker:3100/api/inngest
+      - --event-key
+      - ${INNGEST_EVENT_KEY:?set INNGEST_EVENT_KEY in .env}
+      - --signing-key
+      - ${INNGEST_SIGNING_KEY:?set INNGEST_SIGNING_KEY in .env (hex, openssl rand -hex 32)}
+      - --sqlite-dir
+      - /data
+      - --poll-interval
+      - '60'
+    volumes:
+      - scribe_inngest:/data
+    ports:
+      # Loopback only: the Inngest UI has no auth. Reach it with
+      #   ssh -L 8288:127.0.0.1:8288 <vps>   →   http://localhost:8288
+      - '127.0.0.1:8288:8288'
+    depends_on:
+      worker:
+        condition: service_started
+
+  caddy:
+    image: caddy:2
+    container_name: scribe-caddy
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - scribe_caddy_data:/data
+      - scribe_caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+
+volumes:
+  scribe_pgdata:
+  scribe_inngest:
+  scribe_caddy_data:
+  scribe_caddy_config:
