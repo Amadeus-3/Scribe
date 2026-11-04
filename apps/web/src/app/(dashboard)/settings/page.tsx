@@ -1,6 +1,7 @@
 import {
   prisma,
   getGeminiCredentialSummary,
+  getEmailConfigSummary,
   getGscCredentialSummary,
   getOpenRouterCredentialSummary,
   getSettingsForActor,
@@ -15,6 +16,9 @@ import {
   setGeminiApiKeyAction,
   setOpenRouterApiKeyAction,
   setGscServiceAccountAction,
+  setEmailConfigAction,
+  clearEmailConfigAction,
+  sendTestEmailAction,
   syncOpenRouterModelsAction,
 } from '@/server/actions';
 
@@ -30,6 +34,7 @@ export default async function SettingsPage() {
   const openRouterCredential = await getOpenRouterCredentialSummary(prisma, actor);
   const geminiCredential = await getGeminiCredentialSummary(prisma, actor);
   const gscCredential = await getGscCredentialSummary(prisma, actor);
+  const emailConfig = await getEmailConfigSummary(prisma, actor);
   const canEdit = can(actor.role, 'settings.update');
   const modelCatalog = settings.openrouter.modelCatalog;
   const catalogSyncedAt = settings.openrouter.modelCatalogSyncedAt
@@ -287,6 +292,80 @@ export default async function SettingsPage() {
         </Card>
 
         <div className="grid content-start gap-4">
+          <Card
+            title="Email delivery"
+            description="SMTP used for sign-in links, invitations and the review digest. The URL is stored encrypted; the environment EMAIL_SERVER/EMAIL_FROM remain a fallback."
+          >
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Status</span>
+                <Badge tone={emailConfig.configured ? 'ok' : 'warn'}>
+                  {emailConfig.configured ? `configured (${emailConfig.source})` : 'not set'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">From</span>
+                <span className="truncate">{emailConfig.from ?? '—'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Env fallback</span>
+                <span>{emailConfig.hasEnvFallback ? 'Yes' : 'No'}</span>
+              </div>
+            </div>
+            {canEdit ? (
+              <>
+                <ActionForm
+                  action={setEmailConfigAction}
+                  submitLabel="Save email settings"
+                  className="mt-3 border-t border-border pt-3"
+                >
+                  <Field
+                    label="SMTP URL"
+                    name="serverUrl"
+                    hint="smtp://user:password@host:587 or smtps://…:465. Write-only; never shown again."
+                  >
+                    <input
+                      id="serverUrl"
+                      name="serverUrl"
+                      type="password"
+                      autoComplete="off"
+                      placeholder="smtp://user:password@smtp.example.com:587"
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="From" name="from">
+                    <input
+                      id="from"
+                      name="from"
+                      type="text"
+                      defaultValue={emailConfig.from ?? ''}
+                      placeholder="Scribe <no-reply@example.com>"
+                      className={inputClass}
+                    />
+                  </Field>
+                </ActionForm>
+                <div className="mt-3 flex flex-wrap items-start gap-4 border-t border-border pt-3">
+                  <ActionForm
+                    action={sendTestEmailAction}
+                    submitLabel="Send test email to me"
+                    submitVariant="secondary"
+                  >
+                    <></>
+                  </ActionForm>
+                  {emailConfig.hasStoredConfig ? (
+                    <ActionForm
+                      action={clearEmailConfigAction}
+                      submitLabel="Remove stored settings"
+                      submitVariant="danger"
+                    >
+                      <></>
+                    </ActionForm>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </Card>
+
           <Card
             title="Gemini API key"
             description="Stored encrypted and used for article image generation."

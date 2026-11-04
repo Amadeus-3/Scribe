@@ -25,6 +25,12 @@ import {
   parseTopicLines,
   AuthorizationError,
   UserManagementError,
+  EmailConfigError,
+  EmailSendError,
+  setEmailConfig,
+  clearEmailConfig,
+  sendTestEmail,
+  getEnv,
   inviteUser,
   updateUserRole,
   setUserStatus,
@@ -76,7 +82,11 @@ function toState(action: string, e: unknown): FormState {
     logger.warn({ action, errorType: 'AuthorizationError' }, 'server action denied');
     return { ok: false, error: 'You are not permitted to perform this action.' };
   }
-  if (e instanceof UserManagementError) {
+  if (e instanceof UserManagementError || e instanceof EmailConfigError) {
+    return { ok: false, error: e.message };
+  }
+  if (e instanceof EmailSendError) {
+    logger.warn({ action, errorType: e.name }, 'email send rejected');
     return { ok: false, error: e.message };
   }
   if (e instanceof BudgetExceededError) {
@@ -1078,5 +1088,65 @@ export async function deleteInvitationAction(
     return { ok: true, message: 'Invitation deleted.' };
   } catch (e) {
     return toState('user.invitation.delete', e);
+  }
+}
+
+// ── Email delivery (Settings > Email) ────────────────────────────────────────
+
+export async function setEmailConfigAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    await setEmailConfig(prisma, actor, {
+      serverUrl: str(formData.get('serverUrl')),
+      from: str(formData.get('from')),
+    });
+    revalidatePath('/settings');
+    return { ok: true, message: 'Email settings saved encrypted. Send a test email to confirm.' };
+  } catch (e) {
+    return toState('email.config.update', e);
+  }
+}
+
+export async function clearEmailConfigAction(
+  _prev: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    await clearEmailConfig(prisma, actor);
+    revalidatePath('/settings');
+    return {
+      ok: true,
+      message: 'Stored email settings removed; the environment fallback applies.',
+    };
+  } catch (e) {
+    return toState('email.config.clear', e);
+  }
+}
+
+export async function sendTestEmailAction(
+  _prev: FormState,
+  _formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const result = await sendTestEmail(prisma, actor, getEnv().APP_BASE_URL);
+    return {
+      ok: true,
+      message: `Test email sent to ${result.to} using the ${result.source} config.`,
+    };
+  } catch (e) {
+    if (e instanceof Error && !(e instanceof EmailConfigError) && !(e instanceof EmailSendError)) {
+      // nodemailer connection/auth failures: surface the class of problem, not the URL.
+      logger.warn({ action: 'email.test', errorType: e.name }, 'test email failed');
+      return {
+        ok: false,
+        error: `Could not send: ${(e.message.split('\n')[0] ?? e.name).slice(0, 160)}`,
+      };
+    }
+    return toState('email.test', e);
   }
 }
