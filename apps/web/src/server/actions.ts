@@ -24,6 +24,11 @@ import {
   parseBannedPhrases,
   parseTopicLines,
   AuthorizationError,
+  UserManagementError,
+  inviteUser,
+  updateUserRole,
+  setUserStatus,
+  deleteInvitation,
   OpenRouterError,
   StyleGuideSuggestionError,
   ArticleDraftError,
@@ -62,6 +67,7 @@ import {
 } from '@scribe/core';
 import { emitArticleApproved, emitTickRequested } from './publish-events';
 import { requireActor } from '@/lib/session';
+import { signIn } from '@/auth';
 
 export type FormState = { ok: boolean; error?: string; message?: string };
 
@@ -69,6 +75,9 @@ function toState(action: string, e: unknown): FormState {
   if (e instanceof AuthorizationError) {
     logger.warn({ action, errorType: 'AuthorizationError' }, 'server action denied');
     return { ok: false, error: 'You are not permitted to perform this action.' };
+  }
+  if (e instanceof UserManagementError) {
+    return { ok: false, error: e.message };
   }
   if (e instanceof BudgetExceededError) {
     logger.warn({ action, scope: e.scope, spentUsd: e.spentUsd }, 'AI budget reached');
@@ -985,5 +994,89 @@ export async function syncOpenRouterModelsAction(
       return { ok: false, error: e.message };
     }
     return toState('openrouter.models.sync', e);
+  }
+}
+
+// ── Team (Spec §10.2: invitation-only access) ─────────────────────────────────
+
+export async function inviteUserAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  let invited: { email: string };
+  try {
+    const actor = await requireActor();
+    invited = await inviteUser(prisma, actor, {
+      email: str(formData.get('email')),
+      role: str(formData.get('role')),
+    });
+    revalidatePath('/team');
+  } catch (e) {
+    return toState('user.invite', e);
+  }
+  // The row exists; sending the link is best-effort. Our signIn callback admits
+  // INVITED rows, so this is the same path the invitee would take from /login.
+  try {
+    await signIn('nodemailer', { email: invited.email, redirect: false, redirectTo: '/' });
+    return {
+      ok: true,
+      message: `Invitation created and a sign-in link emailed to ${invited.email}.`,
+    };
+  } catch (e) {
+    logger.warn(
+      { errorType: e instanceof Error ? e.name : typeof e },
+      'invitation created but the sign-in email could not be sent',
+    );
+    return {
+      ok: true,
+      message: `Invitation created. Email could not be sent; ask ${invited.email} to request a sign-in link at /login.`,
+    };
+  }
+}
+
+export async function updateUserRoleAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const role = str(formData.get('role'));
+    if (role !== 'ADMIN' && role !== 'EDITOR' && role !== 'VIEWER') {
+      return { ok: false, error: 'Unknown role.' };
+    }
+    await updateUserRole(prisma, actor, str(formData.get('userId')), role);
+    revalidatePath('/team');
+    return { ok: true, message: 'Role saved.' };
+  } catch (e) {
+    return toState('user.role.update', e);
+  }
+}
+
+export async function setUserStatusAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const status = str(formData.get('status'));
+    if (status !== 'ACTIVE' && status !== 'DISABLED') {
+      return { ok: false, error: 'Unknown status.' };
+    }
+    await setUserStatus(prisma, actor, str(formData.get('userId')), status);
+    revalidatePath('/team');
+    return { ok: true, message: status === 'DISABLED' ? 'Account disabled.' : 'Account enabled.' };
+  } catch (e) {
+    return toState('user.status.update', e);
+  }
+}
+
+export async function deleteInvitationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    await deleteInvitation(prisma, actor, str(formData.get('userId')));
+    revalidatePath('/team');
+    return { ok: true, message: 'Invitation deleted.' };
+  } catch (e) {
+    return toState('user.invitation.delete', e);
   }
 }
