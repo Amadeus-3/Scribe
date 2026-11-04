@@ -38,11 +38,14 @@ describe('suggestStyleGuideWithOpenRouter', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ choices: [{ message: { content } }] }),
+      json: async () => ({
+        choices: [{ message: { content } }],
+        usage: { prompt_tokens: 500, completion_tokens: 300 },
+      }),
       text: async () => '',
     }));
 
-    const guide = await suggestStyleGuideWithOpenRouter({
+    const { suggestion, usage } = await suggestStyleGuideWithOpenRouter({
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
@@ -58,7 +61,8 @@ describe('suggestStyleGuideWithOpenRouter', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer openrouter-key' }),
       }),
     );
-    expect(guide.imagePromptInstructions).toBe('Create clean editorial finance visuals.');
+    expect(suggestion.imagePromptInstructions).toBe('Create clean editorial finance visuals.');
+    expect(usage).toEqual({ inputTokens: 500, outputTokens: 300, cachedTokens: 0 });
   });
 
   it('requires an API key', async () => {

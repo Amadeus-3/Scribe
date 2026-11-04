@@ -2,9 +2,11 @@ import type { PrismaClient } from '@prisma/client';
 import { authorize, type Action, type Actor } from '../auth/authorize';
 import { recordAudit } from '../audit/audit-log';
 import { decryptSecret, encryptSecret } from '../crypto/encryption';
+import { GscServiceAccountSchema, type GscServiceAccount } from '../keyword-sources/types';
 
 const OPENROUTER_PROVIDER = 'openrouter';
 const GEMINI_PROVIDER = 'gemini';
+const GSC_PROVIDER = 'google_search_console';
 
 type Provider = typeof OPENROUTER_PROVIDER | typeof GEMINI_PROVIDER;
 
@@ -140,4 +142,83 @@ export async function getGeminiApiKeyForImageGeneration(
   actor: Actor,
 ): Promise<string | undefined> {
   return getProviderApiKey(db, actor, GEMINI_PROVIDER, 'article.edit');
+}
+
+// ── Google Search Console service-account credential (full JSON, not a key) ───
+function envGscJson(): string | undefined {
+  const value = process.env.GSC_SERVICE_ACCOUNT_JSON?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+export async function getGscCredentialSummary(
+  db: PrismaClient,
+  actor: Actor,
+): Promise<ProviderCredentialSummary> {
+  authorize(actor, 'settings.read');
+  const row = await db.providerCredential.findUnique({
+    where: { provider: GSC_PROVIDER },
+    select: { updatedAt: true },
+  });
+  const hasEnvFallback = Boolean(envGscJson());
+  return {
+    configured: Boolean(row) || hasEnvFallback,
+    hasStoredKey: Boolean(row),
+    hasEnvFallback,
+    updatedAt: row?.updatedAt ?? null,
+  };
+}
+
+export async function setGscServiceAccount(
+  db: PrismaClient,
+  actor: Actor,
+  json: string,
+): Promise<void> {
+  authorize(actor, 'settings.update');
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new Error('Paste the full service-account JSON key (it must be valid JSON).');
+  }
+  const sa = GscServiceAccountSchema.parse(raw);
+  const ciphertext = encryptSecret(JSON.stringify(sa));
+  await db.$transaction(async (tx) => {
+    await tx.providerCredential.upsert({
+      where: { provider: GSC_PROVIDER },
+      create: { provider: GSC_PROVIDER, credentialsEnc: ciphertext },
+      update: { credentialsEnc: ciphertext },
+    });
+    await recordAudit(tx, {
+      actorId: actor.id,
+      actorType: 'human',
+      action: 'providerCredential.updated',
+      entityType: 'ProviderCredential',
+      entityId: GSC_PROVIDER,
+      metadata: { provider: GSC_PROVIDER },
+    });
+  });
+}
+
+/** Decrypt the GSC service account, or fall back to the env JSON. Read gated by `action`. */
+export async function getGscServiceAccount(
+  db: PrismaClient,
+  actor: Actor,
+  action: Action = 'keyword.create',
+): Promise<GscServiceAccount | undefined> {
+  authorize(actor, action);
+  const row = await db.providerCredential.findUnique({ where: { provider: GSC_PROVIDER } });
+  let raw: unknown;
+  try {
+    if (row) {
+      raw = JSON.parse(decryptSecret(row.credentialsEnc));
+    } else {
+      const envJson = envGscJson();
+      if (!envJson) return undefined;
+      raw = JSON.parse(envJson);
+    }
+  } catch {
+    return undefined;
+  }
+  const parsed = GscServiceAccountSchema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
 }

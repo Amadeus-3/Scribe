@@ -42,6 +42,7 @@ const TABLES = [
   'PublishRecord',
   'UsageRecord',
   'ArticleRevision',
+  'ArticleImage',
   'Article',
   'Brief',
   'Keyword',

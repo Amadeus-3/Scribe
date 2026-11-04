@@ -4,7 +4,7 @@
 #   docker compose up -d --build
 #
 # Services: Postgres, Inngest dev server, a one-shot migrate, the web dashboard
-# (:3000 by default, override with WEB_PORT), and the worker (:3100).
+# (:4000 by default, override with WEB_PORT), and the worker (:4100).
 # web + worker build from the root Dockerfile.
 #
 # NOTE: during active feature development, `pnpm dev` on the host gives faster
@@ -19,7 +19,9 @@ services:
       POSTGRES_PASSWORD: scribe
       POSTGRES_DB: scribe
     ports:
-      - '5432:5432'
+      # Host port 5434 (container stays 5432) so Scribe's DB coexists with other
+      # local Postgres stacks that use host 5432/5433.
+      - '5434:5432'
     volumes:
       - scribe_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -41,9 +43,9 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      APP_BASE_URL: http://localhost:${WEB_PORT:-3000}
-      AUTH_URL: http://localhost:${WEB_PORT:-3000}
-      NEXTAUTH_URL: http://localhost:${WEB_PORT:-3000}
+      APP_BASE_URL: http://localhost:${WEB_PORT:-4000}
+      AUTH_URL: http://localhost:${WEB_PORT:-4000}
+      NEXTAUTH_URL: http://localhost:${WEB_PORT:-4000}
       # Self-hosted behind localhost/proxy: trust the incoming host (Auth.js).
       AUTH_TRUST_HOST: 'true'
       DATABASE_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
@@ -53,7 +55,7 @@ services:
       # Magic-link email goes to the Mailpit container (overrides .env localhost).
       EMAIL_SERVER: smtp://mailpit:1025
     ports:
-      - '${WEB_PORT:-3000}:3000'
+      - '${WEB_PORT:-4000}:4000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,34 +91,52 @@ services:
       DIRECT_URL: postgresql://scribe:scribe@postgres:5432/scribe?schema=public
       # Serve in Inngest dev mode against the local dev server (no signing keys).
       INNGEST_DEV: http://inngest:8288
+      # The review-digest cron sends mail from the worker, so it needs SMTP too
+      # (overrides the host-oriented value in .env).
+      EMAIL_SERVER: smtp://mailpit:1025
     ports:
-      - '3100:3100'
+      - '4100:3100'
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_started
     restart: unless-stopped
 
-  # Local mail catcher for magic-link sign-in (SMTP :1025, web UI :8025).
+  # Local mail catcher for magic-link sign-in. Host SMTP :2025 -> container 1025,
+  # host web UI :8026 -> container 8025.
   mailpit:
     image: axllent/mailpit:latest
     container_name: scribe-mailpit
     restart: unless-stopped
     ports:
-      - '1025:1025'
-      - '8025:8025'
+      - '2025:1025'
+      - '8026:8025'
 
   inngest:
     image: inngest/inngest:latest
     container_name: scribe-inngest
     restart: unless-stopped
-    # Discovers the worker's Inngest endpoint over the compose network.
-    command: ['inngest', 'dev', '-u', 'http://worker:3100/api/inngest']
+    # Registration is INBOUND: the dev server fetches this URL to introspect the
+    # worker's functions, and crons only fire for functions it has registered.
+    # Host port 4100 reaches the worker in BOTH modes — `pnpm dev` serves it
+    # directly on the host, and the worker container publishes 4100:3100 — so one
+    # URL covers host-dev and full-Docker. A compose-internal hostname would not:
+    # in the `docker compose up -d postgres inngest` + `pnpm dev` path the worker
+    # container isn't running, nothing registers, and it fails silently (the dev
+    # UI just shows no apps). Override with INNGEST_DISCOVERY_URL if needed.
+    command:
+      - inngest
+      - dev
+      - -u
+      - ${INNGEST_DISCOVERY_URL:-http://host.docker.internal:4100/api/inngest}
+    # Native on Docker Desktop; this mapping gives Linux the same hostname.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     ports:
-      - '8288:8288'
-    depends_on:
-      - worker
+      - '8289:8288'
 
 volumes:
   scribe_pgdata:

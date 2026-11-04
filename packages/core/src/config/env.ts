@@ -55,8 +55,11 @@ export const EnvSchema = z.object({
   SENTRY_DSN: urlOrEmpty.optional(),
   ALERT_WEBHOOK_URL: urlOrEmpty.optional(),
 
-  // Keyword sourcing — unused in v1 (manual seed only, Decision §18.1).
+  // Keyword sourcing / trending-topic discovery. Optional env fallbacks; the
+  // preferred path is the encrypted ProviderCredential rows (Settings UI).
   KEYWORD_API_KEY: z.string().optional(),
+  // Google Search Console service-account JSON (read-only). Secret — never log.
+  GSC_SERVICE_ACCOUNT_JSON: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

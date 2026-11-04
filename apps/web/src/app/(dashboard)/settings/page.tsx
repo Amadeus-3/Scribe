@@ -1,8 +1,10 @@
 import {
   prisma,
   getGeminiCredentialSummary,
+  getGscCredentialSummary,
   getOpenRouterCredentialSummary,
   getSettingsForActor,
+  derivedSpacingMinutes,
   can,
 } from '@scribe/core';
 import { requireActor } from '@/lib/session';
@@ -12,6 +14,7 @@ import {
   updateSettingsAction,
   setGeminiApiKeyAction,
   setOpenRouterApiKeyAction,
+  setGscServiceAccountAction,
   syncOpenRouterModelsAction,
 } from '@/server/actions';
 
@@ -26,14 +29,15 @@ export default async function SettingsPage() {
   const settings = await getSettingsForActor(prisma, actor);
   const openRouterCredential = await getOpenRouterCredentialSummary(prisma, actor);
   const geminiCredential = await getGeminiCredentialSummary(prisma, actor);
+  const gscCredential = await getGscCredentialSummary(prisma, actor);
   const canEdit = can(actor.role, 'settings.update');
   const modelCatalog = settings.openrouter.modelCatalog;
   const catalogSyncedAt = settings.openrouter.modelCatalogSyncedAt
     ? settings.openrouter.modelCatalogSyncedAt.replace('T', ' ').slice(0, 19)
     : 'Never';
 
-  const numberField = (label: string, name: string, value: number) => (
-    <Field label={label} name={name}>
+  const numberField = (label: string, name: string, value: number, hint?: string) => (
+    <Field label={label} name={name} hint={hint}>
       <input
         id={name}
         name={name}
@@ -45,6 +49,18 @@ export default async function SettingsPage() {
       />
     </Field>
   );
+
+  const checkbox = (name: string, checked: boolean, label: string) => (
+    <label className="mt-1 flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-sm">
+      <input type="checkbox" name={name} defaultChecked={checked} disabled={!canEdit} /> {label}
+    </label>
+  );
+
+  // Show what the weekly number actually means, so the dial is legible.
+  const spacingMinutes = derivedSpacingMinutes(settings.autopilot_articles_per_week);
+  const spacingHint = Number.isFinite(spacingMinutes)
+    ? `About one article every ${Math.round(spacingMinutes / 60)} hours.`
+    : 'Set to 0 to pause drafting.';
 
   const textModelField = (label: string, name: string, value: string) => {
     const currentInCatalog = modelCatalog.some((model) => model.id === value);
@@ -135,6 +151,138 @@ export default async function SettingsPage() {
                 </select>
               </Field>
             </div>
+            <label className="mt-1 flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                name="discovery_cron_enabled"
+                defaultChecked={settings.discovery_cron_enabled}
+                disabled={!canEdit}
+              />{' '}
+              Enable the weekly trending-topic discovery cron (only runs for sites opted in)
+            </label>
+
+            <div className="mt-4 border-t border-border pt-3">
+              <h3 className="text-sm font-medium">Autopilot</h3>
+              <p className="mt-1 text-xs text-muted">
+                Discovers topics and produces complete drafts on its own. Articles always stop at
+                review — nothing publishes until you approve it.
+              </p>
+
+              {checkbox(
+                'autopilot_enabled',
+                settings.autopilot_enabled,
+                'Enable autopilot (per-site opt-in also required)',
+              )}
+
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                {numberField(
+                  'Articles per week (per site)',
+                  'autopilot_articles_per_week',
+                  settings.autopilot_articles_per_week,
+                  spacingHint,
+                )}
+                {numberField(
+                  'Max awaiting review',
+                  'autopilot_max_unreviewed',
+                  settings.autopilot_max_unreviewed,
+                  'Drafting pauses at this many unreviewed. 0 = no limit.',
+                )}
+                {numberField(
+                  'Minimum spacing (minutes)',
+                  'autopilot_min_spacing_minutes',
+                  settings.autopilot_min_spacing_minutes,
+                  '0 spreads them evenly across the week.',
+                )}
+                {numberField(
+                  'Budget reserve (%)',
+                  'autopilot_budget_reserve_pct',
+                  settings.autopilot_budget_reserve_pct,
+                  'Held back so you can still fix drafts by hand.',
+                )}
+                {numberField(
+                  'Max in-body images',
+                  'autopilot_max_inline_images',
+                  settings.autopilot_max_inline_images,
+                )}
+                {numberField(
+                  'Discover below N keywords',
+                  'autopilot_keyword_buffer_low_water',
+                  settings.autopilot_keyword_buffer_low_water,
+                )}
+              </div>
+
+              <div className="mt-2 grid gap-1">
+                {checkbox(
+                  'autopilot_assign_taxonomy',
+                  settings.autopilot_assign_taxonomy,
+                  'Auto-assign category and tags',
+                )}
+                {checkbox(
+                  'autopilot_generate_hero_image',
+                  settings.autopilot_generate_hero_image,
+                  'Generate a hero image',
+                )}
+                {checkbox(
+                  'autopilot_generate_inline_images',
+                  settings.autopilot_generate_inline_images,
+                  'Generate in-body images',
+                )}
+              </div>
+
+              <div className="mt-2 grid grid-cols-3 gap-3">
+                {numberField(
+                  'Run from (hour)',
+                  'autopilot_run_window.startHour',
+                  settings.autopilot_run_window.startHour,
+                )}
+                {numberField(
+                  'Run until (hour)',
+                  'autopilot_run_window.endHour',
+                  settings.autopilot_run_window.endHour,
+                )}
+                {numberField(
+                  'UTC offset (minutes)',
+                  'autopilot_run_window.timezoneOffsetMinutes',
+                  settings.autopilot_run_window.timezoneOffsetMinutes,
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 border-t border-border pt-3">
+              <h3 className="text-sm font-medium">Review digest</h3>
+              {checkbox(
+                'review_digest_enabled',
+                settings.review_digest_enabled,
+                'Email me when articles are ready to review',
+              )}
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                {numberField(
+                  'Send at (hour, UTC)',
+                  'review_digest_hour_utc',
+                  settings.review_digest_hour_utc,
+                )}
+                {numberField(
+                  'Only if at least N articles',
+                  'review_digest_min_articles',
+                  settings.review_digest_min_articles,
+                )}
+              </div>
+              <div className="mt-2">
+                <Field
+                  label="Recipients"
+                  name="review_digest_recipients"
+                  hint="Comma separated. Leave blank to email every Admin and Editor."
+                >
+                  <input
+                    id="review_digest_recipients"
+                    name="review_digest_recipients"
+                    defaultValue={settings.review_digest_recipients.join(', ')}
+                    disabled={!canEdit}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            </div>
           </ActionForm>
         </Card>
 
@@ -220,8 +368,53 @@ export default async function SettingsPage() {
           </Card>
 
           <Card
+            title="Google Search Console"
+            description="Service-account JSON (read-only) for trending-topic discovery. Add the service account's email as a user on each GSC property."
+          >
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Status</span>
+                <Badge tone={gscCredential.configured ? 'ok' : 'muted'}>
+                  {gscCredential.configured ? 'configured' : 'not set'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Stored key</span>
+                <span>{gscCredential.hasStoredKey ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted">Env fallback</span>
+                <span>{gscCredential.hasEnvFallback ? 'Yes' : 'No'}</span>
+              </div>
+            </div>
+            {canEdit ? (
+              <ActionForm
+                action={setGscServiceAccountAction}
+                submitLabel="Save service account"
+                className="mt-3 border-t border-border pt-3"
+              >
+                <Field
+                  label="Service-account JSON"
+                  name="serviceAccountJson"
+                  hint="Paste the full JSON key. Stored encrypted; never returned to the browser."
+                >
+                  <textarea
+                    id="serviceAccountJson"
+                    name="serviceAccountJson"
+                    required
+                    rows={5}
+                    className={`${inputClass} font-mono text-xs`}
+                    autoComplete="off"
+                    placeholder='{ "type": "service_account", "client_email": "...", "private_key": "..." }'
+                  />
+                </Field>
+              </ActionForm>
+            ) : null}
+          </Card>
+
+          <Card
             title="OpenRouter catalog"
-            description="Text-output models available for brief, draft, and QA generation."
+            description="Text-in / text-out models available for brief, draft, and QA generation."
           >
             <div className="grid gap-2 text-sm">
               <div className="flex items-center justify-between gap-2">

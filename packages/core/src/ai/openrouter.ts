@@ -71,12 +71,22 @@ function toPerMTok(value: number): number {
   return Number((value * 1_000_000).toFixed(6));
 }
 
+// The pipeline only ever sends text prompts and only ever consumes text
+// completions, so a model that also accepts images/audio or emits non-text
+// output is noise in the picker (and a cost/behaviour surprise). Keep the
+// catalog to strictly text -> text models.
+function isTextOnlyModality(modalities: string[]): boolean {
+  return modalities.length > 0 && modalities.every((modality) => modality === 'text');
+}
+
 export function normalizeOpenRouterTextModel(
   model: OpenRouterRawModel,
 ): OpenRouterTextModel | null {
   const inputModalities = model.architecture?.input_modalities ?? [];
   const outputModalities = model.architecture?.output_modalities ?? [];
-  if (!outputModalities.includes('text')) return null;
+  if (!isTextOnlyModality(inputModalities) || !isTextOnlyModality(outputModalities)) {
+    return null;
+  }
 
   const supported = new Set(model.supported_parameters ?? []);
   return {

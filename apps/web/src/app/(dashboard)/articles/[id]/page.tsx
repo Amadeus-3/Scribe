@@ -1,8 +1,20 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { prisma, getArticle, getSite, listArticlePublishRecords, can } from '@scribe/core';
+import {
+  prisma,
+  getArticle,
+  getSite,
+  listArticlePublishRecords,
+  listArticleImages,
+  listSiteTaxonomy,
+  can,
+  type SiteTaxonomyDTO,
+} from '@scribe/core';
 import { requireActor } from '@/lib/session';
-import { PageHeader, Card, Field, Badge, inputClass } from '@/components/ui';
+import { PageHeader, Card, Field, Badge, StatusBadge, buttonClass, inputClass } from '@/components/ui';
+import { SeoScoreCard } from '@/components/seo-score-card';
+import { InlineImagesCard } from '@/components/inline-images-card';
+import { TaxonomyFields } from '@/components/taxonomy-fields';
 import { ActionForm } from '@/components/action-form';
 import {
   updateArticleDraftAction,
@@ -11,6 +23,9 @@ import {
   rejectArticleAction,
   publishArticleAction,
   uploadArticleImageAction,
+  autoAssignTaxonomyAction,
+  regenerateArticleAction,
+  updateArticleKeywordAction,
 } from '@/server/actions';
 
 export default async function ArticleDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,14 +35,35 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
   if (!article) notFound();
 
   const site = await getSite(prisma, actor, article.siteId);
+  const inlineImages = await listArticleImages(prisma, actor, article.id);
   const publishRecords = await listArticlePublishRecords(prisma, actor, article.id);
+  // Best-effort: the CMS may be unreachable/misconfigured — degrade to no picker.
+  let taxonomy: SiteTaxonomyDTO | null = null;
+  try {
+    taxonomy = await listSiteTaxonomy(prisma, actor, article.siteId);
+  } catch {
+    taxonomy = null;
+  }
   const latestPublishRecord = publishRecords[0] ?? null;
+  const hasPublished = publishRecords.some((record) => record.status === 'success');
   const canEdit = can(actor.role, 'article.edit');
   const canApprove = can(actor.role, 'article.approve');
   const canRequestChanges = can(actor.role, 'article.requestChanges');
   const canReject = can(actor.role, 'article.reject');
   const canPublish = can(actor.role, 'article.publish');
-  const publishable = article.status === 'APPROVED' || article.status === 'PUBLISH_FAILED';
+  // Approving now publishes, so the Publish button is the RECOVERY path rather
+  // than the happy path: it appears when a publish failed, or when an approved
+  // article has no successful/in-flight publish for its current version (the
+  // event never landed, or Inngest was down).
+  const settledForVersion = publishRecords.some(
+    (record) =>
+      record.idempotencyKey === `publish:${article.id}:${article.currentVersion}` &&
+      (record.status === 'success' || record.status === 'pending'),
+  );
+  const publishable =
+    article.status === 'PUBLISH_FAILED' ||
+    (article.status === 'APPROVED' && !settledForVersion);
+  const approveLabel = canPublish ? 'Approve & publish' : 'Approve';
   const imageSrc =
     article.imageMimeType && article.imageDataBase64
       ? `data:${article.imageMimeType};base64,${article.imageDataBase64}`
@@ -40,9 +76,9 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
         description={article.slug ?? undefined}
         actions={
           <>
-            <Badge tone="muted">{article.status}</Badge>
+            <StatusBadge status={article.status} />
             {site ? (
-              <Link href={`/sites/${site.id}`} className="text-sm text-muted hover:text-fg">
+              <Link href={`/sites/${site.id}`} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
                 Back to site
               </Link>
             ) : null}
@@ -53,7 +89,14 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <Card title="Review editor">
           {canEdit ? (
-            <ActionForm action={updateArticleDraftAction} submitLabel="Save article">
+            // Key on regenAttempts so a regenerate remounts the form and reloads
+            // the new draft into these uncontrolled inputs. Without this, the
+            // stale textarea would be saved back over the regenerated content.
+            <ActionForm
+              key={article.regenAttempts}
+              action={updateArticleDraftAction}
+              submitLabel="Save article"
+            >
               <input type="hidden" name="id" value={article.id} />
               <Field label="Title" name="title">
                 <input
@@ -95,6 +138,13 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
                   className={inputClass}
                 />
               </Field>
+              {taxonomy ? (
+                <TaxonomyFields
+                  taxonomy={taxonomy}
+                  categorySlug={article.categorySlug}
+                  tagSlugs={article.tagSlugs}
+                />
+              ) : null}
               <Field label="Draft markdown" name="contentMarkdown">
                 <textarea
                   id="contentMarkdown"
@@ -114,15 +164,26 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
         </Card>
 
         <div className="grid content-start gap-4">
-          <Card title="Review actions">
+          <Card
+            title="Review actions"
+            description={
+              canPublish
+                ? 'Approving publishes the article to the CMS as a draft.'
+                : 'Approve the draft when the article, metadata, taxonomy, and image prompt are ready.'
+            }
+          >
             <div className="grid gap-3">
               {canApprove ? (
-                <ActionForm action={approveArticleAction} submitLabel="Approve">
+                <ActionForm action={approveArticleAction} submitLabel={approveLabel}>
                   <input type="hidden" name="id" value={article.id} />
                 </ActionForm>
               ) : null}
               {canRequestChanges ? (
-                <ActionForm action={requestArticleChangesAction} submitLabel="Request changes">
+                <ActionForm
+                  action={requestArticleChangesAction}
+                  submitLabel="Request changes"
+                  submitVariant="secondary"
+                >
                   <input type="hidden" name="id" value={article.id} />
                   <Field label="Reason" name="reason" hint="Optional">
                     <textarea id="reason" name="reason" rows={3} className={inputClass} />
@@ -130,7 +191,7 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
                 </ActionForm>
               ) : null}
               {canReject ? (
-                <ActionForm action={rejectArticleAction} submitLabel="Reject">
+                <ActionForm action={rejectArticleAction} submitLabel="Reject" submitVariant="danger">
                   <input type="hidden" name="id" value={article.id} />
                   <Field label="Reason" name="reason" hint="Optional">
                     <textarea id="reason" name="reason" rows={3} className={inputClass} />
@@ -139,6 +200,63 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
               ) : null}
             </div>
           </Card>
+
+          {canEdit ? (
+            <Card
+              title="Primary keyword"
+              description="The SEO target this article is scored against. Refine it to a concise phrase, then re-score / regenerate."
+            >
+              <ActionForm action={updateArticleKeywordAction} submitLabel="Save keyword & re-score">
+                <input type="hidden" name="id" value={article.id} />
+                <Field label="Keyword" name="keyword">
+                  <input
+                    id="keyword"
+                    name="keyword"
+                    required
+                    defaultValue={article.keyword ?? ''}
+                    className={inputClass}
+                  />
+                </Field>
+              </ActionForm>
+            </Card>
+          ) : null}
+
+          <SeoScoreCard report={article.seoReport} />
+
+          {canEdit && taxonomy ? (
+            <Card
+              title="AI metadata"
+              description="Let the model assign this article's category and tags from your CMS taxonomy. Existing drafts can be classified without re-writing the content."
+            >
+              <ActionForm action={autoAssignTaxonomyAction} submitLabel="Auto-assign category & tags">
+                <input type="hidden" name="id" value={article.id} />
+              </ActionForm>
+            </Card>
+          ) : null}
+
+          {canEdit && article.status !== 'PUBLISHING' ? (
+            <Card
+              title="Regenerate (AI)"
+              description="Rewrite this draft with the model, folding in your comments and the current SEO findings. Saved as a new version and sent back to review — the live CMS post is untouched until you publish again."
+            >
+              <ActionForm action={regenerateArticleAction} submitLabel="Regenerate draft">
+                <input type="hidden" name="id" value={article.id} />
+                <Field
+                  label="Comments for the rewrite"
+                  name="comments"
+                  hint="Optional. The current SEO findings are sent automatically."
+                >
+                  <textarea id="comments" name="comments" rows={4} className={inputClass} />
+                </Field>
+                {article.seoReport && article.seoReport.flags.length > 0 ? (
+                  <p className="text-xs text-muted">
+                    Will also address {article.seoReport.flags.length} SEO flag
+                    {article.seoReport.flags.length === 1 ? '' : 's'}.
+                  </p>
+                ) : null}
+              </ActionForm>
+            </Card>
+          ) : null}
 
           <Card title="Article metadata">
             <dl className="grid gap-2 text-sm">
@@ -151,6 +269,14 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
                 <dd>{article.wordCount ?? 'Unknown'}</dd>
               </div>
               <div>
+                <dt className="text-xs text-muted">Category</dt>
+                <dd>{article.categorySlug ?? 'None'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted">Tags</dt>
+                <dd>{article.tagSlugs.length > 0 ? article.tagSlugs.join(', ') : 'None'}</dd>
+              </div>
+              <div>
                 <dt className="text-xs text-muted">Model</dt>
                 <dd>{article.llmModel ?? 'Unknown'}</dd>
               </div>
@@ -159,14 +285,22 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
 
           <Card
             title="Publishing"
-            description="Approved articles can be sent to the configured Strapi collection."
+            description="Approved articles are sent to the configured Strapi collection. Public vs draft behavior is controlled on the site CMS settings."
           >
             <dl className="grid gap-2 text-sm">
               <div>
                 <dt className="text-xs text-muted">Latest attempt</dt>
                 <dd>
                   {latestPublishRecord ? (
-                    <Badge tone={latestPublishRecord.status === 'success' ? 'ok' : 'danger'}>
+                    <Badge
+                      tone={
+                        latestPublishRecord.status === 'success'
+                          ? 'ok'
+                          : latestPublishRecord.status === 'pending'
+                            ? 'warn'
+                            : 'danger'
+                      }
+                    >
                       {latestPublishRecord.status}
                     </Badge>
                   ) : (
@@ -176,7 +310,7 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
               </div>
               {latestPublishRecord?.url ? (
                 <div>
-                  <dt className="text-xs text-muted">Published URL</dt>
+                  <dt className="text-xs text-muted">CMS URL</dt>
                   <dd>
                     <a
                       href={latestPublishRecord.url}
@@ -199,7 +333,13 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
             {canPublish && publishable ? (
               <ActionForm
                 action={publishArticleAction}
-                submitLabel={article.status === 'PUBLISH_FAILED' ? 'Retry publish' : 'Publish'}
+                submitLabel={
+                  hasPublished
+                    ? 'Republish (update live post)'
+                    : article.status === 'PUBLISH_FAILED'
+                      ? 'Retry publish'
+                      : 'Publish'
+                }
                 className="mt-3 border-t border-border pt-3"
               >
                 <input type="hidden" name="id" value={article.id} />
@@ -259,6 +399,12 @@ export default async function ArticleDetailPage({ params }: { params: Promise<{ 
               </ActionForm>
             ) : null}
           </Card>
+
+          <InlineImagesCard
+            articleId={article.id}
+            images={inlineImages}
+            canEdit={canEdit}
+          />
         </div>
       </div>
     </>

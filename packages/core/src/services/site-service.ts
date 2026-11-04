@@ -2,6 +2,7 @@ import type { CmsType, PrismaClient, Site, SiteStatus } from '@prisma/client';
 import { authorize, type Actor } from '../auth/authorize';
 import { recordAudit } from '../audit/audit-log';
 import { encryptSecret, decryptSecret } from '../crypto/encryption';
+import { normalizeArticlePathPrefix } from '../domain/internal-links';
 import {
   CmsCredentialsSchema,
   LegacyWordPressCredentialsSchema,
@@ -20,10 +21,20 @@ export interface SiteDTO {
   id: string;
   name: string;
   baseUrl: string;
+  /** Public URL path prefix for posts (e.g. "/blog"); null = site root. */
+  articlePathPrefix: string | null;
   cmsType: CmsType;
   defaultAuthor: string | null;
   status: SiteStatus;
   briefAutoApprove: boolean;
+  /** Google Search Console property id (non-secret) for trending-topic discovery. */
+  gscPropertyUrl: string | null;
+  /** Whether the weekly discovery cron should run for this site. */
+  discoveryEnabled: boolean;
+  /** Whether the autopilot may draft for this site. */
+  autopilotEnabled: boolean;
+  /** Per-site weekly target; null inherits the global setting. */
+  autopilotArticlesPerWeek: number | null;
   /** Whether credentials are stored — the ciphertext itself is never exposed. */
   hasCredentials: boolean;
   createdAt: Date;
@@ -34,10 +45,15 @@ function toSiteDTO(site: Site): SiteDTO {
     id: site.id,
     name: site.name,
     baseUrl: site.baseUrl,
+    articlePathPrefix: site.articlePathPrefix,
     cmsType: site.cmsType,
     defaultAuthor: site.defaultAuthor,
     status: site.status,
     briefAutoApprove: site.briefAutoApprove,
+    gscPropertyUrl: site.gscPropertyUrl,
+    discoveryEnabled: site.discoveryEnabled,
+    autopilotEnabled: site.autopilotEnabled,
+    autopilotArticlesPerWeek: site.autopilotArticlesPerWeek,
     hasCredentials: Boolean(site.cmsCredentialsEnc),
     createdAt: site.createdAt,
   };
@@ -69,10 +85,17 @@ function toCredentialsSummary(
         title: 'title',
         slug: 'slug',
         content: 'content',
-        metaDescription: 'metaDescription',
+        metaDescription: 'description',
+        image: 'image',
+        readTime: 'readTime',
+        author: 'author',
+        date: 'date',
+        featured: 'featured',
+        category: 'category',
+        tags: 'tags',
       },
       contentFormat: strapi?.contentFormat ?? 'HTML',
-      publicationStatus: strapi?.publicationStatus ?? 'DRAFT',
+      publicationStatus: strapi?.publicationStatus ?? 'PUBLISHED',
       locale: strapi?.locale ?? null,
       hasSecret: credentials?.cmsType === 'STRAPI' && credentials.apiToken.length > 0,
     };
@@ -105,9 +128,14 @@ export async function createSite(db: PrismaClient, actor: Actor, input: unknown)
       data: {
         name: data.name,
         baseUrl: data.baseUrl,
+        articlePathPrefix: normalizeArticlePathPrefix(data.articlePathPrefix) || null,
         cmsType: data.cmsType,
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
+        gscPropertyUrl: data.gscPropertyUrl ?? null,
+        discoveryEnabled: data.discoveryEnabled,
+        autopilotEnabled: data.autopilotEnabled,
+        autopilotArticlesPerWeek: data.autopilotArticlesPerWeek,
       },
     });
     await recordAudit(tx, {
@@ -138,10 +166,15 @@ export async function updateSite(
       data: {
         name: data.name,
         baseUrl: data.baseUrl,
+        articlePathPrefix: normalizeArticlePathPrefix(data.articlePathPrefix) || null,
         cmsType: data.cmsType,
         ...(cmsTypeChanged ? { cmsCredentialsEnc: null } : {}),
         defaultAuthor: data.defaultAuthor ?? null,
         briefAutoApprove: data.briefAutoApprove,
+        gscPropertyUrl: data.gscPropertyUrl ?? null,
+        discoveryEnabled: data.discoveryEnabled,
+        autopilotEnabled: data.autopilotEnabled,
+        autopilotArticlesPerWeek: data.autopilotArticlesPerWeek,
       },
     });
     await recordAudit(tx, {
