@@ -9,9 +9,16 @@ This plan was written against the code as of 2026-11-04 (main at the merge of
 PR #2). Each phase lists what exists, what changes, and the acceptance check.
 
 **Status (2026-11-04):** Phases C and D landed in PR #3, Phase A in PR #9,
-Phase B in the PR after it. What remains before flipping the repo public is
-GitHub-side: make the GHCR package public, add branch protection on `main`
-(require CI), then change visibility. Phase E is post-launch.
+Phase B in PR #17. What remains is GitHub-side, in this order (branch
+protection and rulesets are not available on a private repo under a free
+personal plan, so visibility goes first):
+
+1. Make the GHCR package public (Packages → scribe → Package settings).
+2. Change the repository visibility to public.
+3. Protect `main` with the saved ruleset:
+   `gh api -X POST repos/Amadeus-3/Scribe/rulesets --input .github/rulesets/protect-main.json`
+
+Phase E is post-launch.
 
 ## Audit: where configuration lives today
 
