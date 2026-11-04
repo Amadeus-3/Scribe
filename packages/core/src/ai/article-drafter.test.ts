@@ -24,7 +24,7 @@ describe('buildArticleDraftMessages', () => {
   it('includes the keyword, style guide, and image prompt instructions', () => {
     const messages = buildArticleDraftMessages({
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       instructions: 'Mention budgeting.',
       styleGuide,
@@ -42,7 +42,7 @@ describe('buildArticleDraftMessages', () => {
   it('offers the existing taxonomy to choose from when provided', () => {
     const user = buildArticleDraftMessages({
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       styleGuide,
       taxonomy: {
@@ -62,7 +62,7 @@ describe('buildArticleDraftMessages', () => {
   it('omits taxonomy instructions when none is provided', () => {
     const user = buildArticleDraftMessages({
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       styleGuide,
     }).find((message) => message.role === 'user')?.content;
@@ -72,7 +72,7 @@ describe('buildArticleDraftMessages', () => {
   it('builds a revision prompt with the current draft, comments, and SEO issues', () => {
     const user = buildArticleDraftMessages({
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       styleGuide,
       revision: {
@@ -104,7 +104,11 @@ describe('draftArticleWithOpenRouter', () => {
       statusText: 'OK',
       json: async () => ({
         choices: [{ message: { content } }],
-        usage: { prompt_tokens: 1200, completion_tokens: 800, prompt_tokens_details: { cached_tokens: 200 } },
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 800,
+          prompt_tokens_details: { cached_tokens: 200 },
+        },
       }),
       text: async () => '',
     }));
@@ -113,7 +117,7 @@ describe('draftArticleWithOpenRouter', () => {
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       styleGuide,
       fetchFn,
@@ -156,7 +160,7 @@ describe('draftArticleWithOpenRouter', () => {
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       styleGuide,
       fetchFn,
@@ -178,7 +182,8 @@ describe('draftArticleWithOpenRouter', () => {
           placement: 'How to set it up in three steps',
           alt: 'Flowchart of the three-step automatic savings system',
           aspectRatio: '16:9',
-          prompt: 'Clean flat-vector flowchart with three labeled stages, brand-safe, no embedded text.',
+          prompt:
+            'Clean flat-vector flowchart with three labeled stages, brand-safe, no embedded text.',
         },
       ],
     });
@@ -194,7 +199,7 @@ describe('draftArticleWithOpenRouter', () => {
       apiKey: 'openrouter-key',
       model: 'openai/gpt-4o-mini',
       siteName: 'Wisely Rich',
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
       keyword: 'how to build wealth',
       styleGuide,
       fetchFn,
@@ -210,7 +215,7 @@ describe('draftArticleWithOpenRouter', () => {
       draftArticleWithOpenRouter({
         model: 'openai/gpt-4o-mini',
         siteName: 'Wisely Rich',
-        siteUrl: 'https://wiselyrich.com',
+        siteUrl: 'https://example.com',
         keyword: 'how to build wealth',
         styleGuide,
       }),

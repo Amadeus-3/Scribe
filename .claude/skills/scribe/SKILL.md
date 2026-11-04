@@ -77,7 +77,7 @@ curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:4000/
 Then open http://localhost:4000. The Inngest dev UI is at http://localhost:8289.
 
 **Check the crons are actually live.** Open the Inngest UI → Apps and confirm
-`scribe` is *connected* and lists `pipeline-tick`, `article-autodraft`,
+`scribe` is _connected_ and lists `pipeline-tick`, `article-autodraft`,
 `discovery-run`, `discovery-weekly`, `publish-run`, `review-digest`. Crons only
 fire for registered functions, and registration failing is SILENT — an empty
 Apps list is the only symptom.
@@ -97,7 +97,7 @@ Two things make that work, both easy to break:
   publishes 8289.
 
 Auto-discovery stops after the first successful sync, so if you start the worker
-*after* the dev server, either `docker restart scribe-inngest` or force a sync
+_after_ the dev server, either `docker restart scribe-inngest` or force a sync
 with `curl -X PUT http://localhost:4100/api/inngest`.
 
 A 15-minute cron is too slow to iterate on: send `scribe/keyword.claimed` by hand
@@ -211,7 +211,7 @@ sites (e.g. zodiacfield). Distilled from how the most-read astrology writers act
 — the AstroTwins / Astrostyle (punchy + practical), Chani Nicholas (agency + meaning),
 Madame Clairevoyant / Claire Comstock-Gay in The Cut (literary, image-driven, "personal but
 grounded, never over-specific"), Co-Star (blunt, aphoristic) — plus the Barnum research
-(specificity that *feels* personal beats vague universals).
+(specificity that _feels_ personal beats vague universals).
 
 **Core rules (any topic):**
 
@@ -239,8 +239,8 @@ cosmos/process", "lean into", "embrace the journey", "navigate", vague "energy/v
 "in today's fast-paced world", "look no further", "delve", "unlock", "elevate", em-dash
 pile-ups, and any sentence that would be equally true for all twelve signs.
 
-**Astrology specifics:** name the *real* transit (which planet, sign, aspect — accuracy
-first), then interpret what it asks of *this* sign in plain life terms. Tie it to the sign's
+**Astrology specifics:** name the _real_ transit (which planet, sign, aspect — accuracy
+first), then interpret what it asks of _this_ sign in plain life terms. Tie it to the sign's
 actual themes/ruler, not horoscope wallpaper.
 
 **Before → after** (the literal bad line we shipped, then the fix):
@@ -258,7 +258,7 @@ actual themes/ruler, not horoscope wallpaper.
 
 - **Git commits:** the machine's global `~/.gitconfig` has a malformed empty
   `gpg.format` that aborts `git commit`/`git log`. Commit with:
-  `GIT_CONFIG_GLOBAL=/dev/null git -c user.name="Amadeus-3" -c user.email="88628175+Amadeus-3@users.noreply.github.com" -c commit.gpgsign=false commit ...`
+  `GIT_CONFIG_GLOBAL=/dev/null git -c user.name="<name>" -c user.email="<email>" -c commit.gpgsign=false commit ...`
   (Do not edit the user's global config without asking.)
 - **`@sentry/core`** must stay a direct dependency of `apps/web` — under pnpm,
   the Sentry build plugin's injected import is otherwise unresolvable.
@@ -269,7 +269,7 @@ actual themes/ruler, not horoscope wallpaper.
   `ALLOWED_SIGNIN_EMAILS` (checked at link-request time); local magic links land
   in Mailpit (http://localhost:8026). The first user to sign in becomes ADMIN.
 - **Integration tests** (`pnpm --filter @scribe/core test:integration`) auto-create
-  + migrate a `<db>_test` database; needs Postgres up and DATABASE_URL set.
+  - migrate a `<db>_test` database; needs Postgres up and DATABASE_URL set.
 - **CI** mirrors the quality gate exactly: install (frozen lockfile) → db:generate
   → db:deploy → lint → typecheck → test → build, with a Postgres service.
 - **Docker (full stack):** one shared image `scribe-app` (root `Dockerfile`); only

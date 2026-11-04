@@ -9,40 +9,40 @@ The goal: the user never triggers topic discovery or article generation. A sched
 The human review gate stays absolute (CLAUDE.md §10.1 #1). This plan strengthens it: it closes a latent hole where SYSTEM_ACTOR (role ADMIN) already passes authorize(actor, 'article.publish').
 
 What the pipeline becomes
-cron */15                 pipeline-tick  (thin: reads Settings, decides, claims)
-  │  reclaim stale claims (IN_PROGRESS older than N min -> QUEUED)
-  │  budget reserve gate  (stop before spending the human's headroom)
-  │  for each ACTIVE + autopilotEnabled site WITH a style guide:
-  │     decidePacing(settings, throughput)   pure fn, fully unit-tested
-  │        ├─ articles this rolling 7d >= target?      -> skip
-  │        ├─ unreviewed backlog >= cap?               -> skip  ◄ self-limiting
-  │        ├─ spacing since last article not elapsed?  -> skip
-  │        ├─ outside run window?                      -> skip
-  │        └─ ok -> claim ONE keyword atomically, emit event
-  │     QUEUED keywords below low-water? -> emit scribe/discovery.requested
-  v
-scribe/keyword.claimed ──> article-autodraft   (concurrency 1/site, idempotent on keywordId)
-                             ├─ draft                 FATAL        generateArticleDraft
-                             ├─ taxonomy              best-effort  autoAssignArticleTaxonomy
-                             ├─ hero image            best-effort  generateArticleImage
-                             ├─ suggest inline images best-effort  suggestArticleInlineImages
-                             ├─ inline-image-{id} xN  best-effort  generateArticleInlineImage
-                             └─ emit scribe/article.drafted
-                                       │
-                             Article @ PENDING_REVIEW, complete
-                                       v
-cron hourly              review-digest ──> email: "3 articles ready to review" + links
-                                       v
-                          ╔═══════════════════════════════════╗
-                          ║  HUMAN clicks Approve  (the gate) ║
-                          ╚═══════════════════════════════════╝
-                                       v
-                     article.approved { articleId, reviewId, actorId, version }
-                                       v
-                          publish-run: re-verifies a HUMAN did this,
-                                       against the DB, not the payload
-                                       v
-                                  CMS (draft status)
+cron \*/15 pipeline-tick (thin: reads Settings, decides, claims)
+│ reclaim stale claims (IN_PROGRESS older than N min -> QUEUED)
+│ budget reserve gate (stop before spending the human's headroom)
+│ for each ACTIVE + autopilotEnabled site WITH a style guide:
+│ decidePacing(settings, throughput) pure fn, fully unit-tested
+│ ├─ articles this rolling 7d >= target? -> skip
+│ ├─ unreviewed backlog >= cap? -> skip ◄ self-limiting
+│ ├─ spacing since last article not elapsed? -> skip
+│ ├─ outside run window? -> skip
+│ └─ ok -> claim ONE keyword atomically, emit event
+│ QUEUED keywords below low-water? -> emit scribe/discovery.requested
+v
+scribe/keyword.claimed ──> article-autodraft (concurrency 1/site, idempotent on keywordId)
+├─ draft FATAL generateArticleDraft
+├─ taxonomy best-effort autoAssignArticleTaxonomy
+├─ hero image best-effort generateArticleImage
+├─ suggest inline images best-effort suggestArticleInlineImages
+├─ inline-image-{id} xN best-effort generateArticleInlineImage
+└─ emit scribe/article.drafted
+│
+Article @ PENDING_REVIEW, complete
+v
+cron hourly review-digest ──> email: "3 articles ready to review" + links
+v
+╔═══════════════════════════════════╗
+║ HUMAN clicks Approve (the gate) ║
+╚═══════════════════════════════════╝
+v
+article.approved { articleId, reviewId, actorId, version }
+v
+publish-run: re-verifies a HUMAN did this,
+against the DB, not the payload
+v
+CMS (draft status)
 Two structural safety properties: the tick claims at most one keyword per site per tick, so a bug in the pacing math can never fan out twenty paid drafts; and production stops on its own when the unreviewed pile hits its cap, so an unread backlog cannot drain the budget.
 
 Phase 0: three blockers (verified, must land first)
@@ -53,14 +53,14 @@ The discovery service already has the correct pattern (keyword-discovery-service
 
 Fix, in a new packages/core/src/auth/system-actor.ts:
 
-export interface SystemActor extends Actor { readonly __system: true }
-export const SYSTEM_ACTOR: SystemActor = { id: 'system', role: 'ADMIN', __system: true };
-/** An Actor that is provably not the system sentinel (compile-time deterrent). */
-export type HumanClaimActor = Actor & { readonly __system?: never };
+export interface SystemActor extends Actor { readonly **system: true }
+export const SYSTEM_ACTOR: SystemActor = { id: 'system', role: 'ADMIN', **system: true };
+/** An Actor that is provably not the system sentinel (compile-time deterrent). \*/
+export type HumanClaimActor = Actor & { readonly \_\_system?: never };
 export function isSystemActor(actor: Actor): boolean;
-/** Correct AuditLog attribution for any actor (null actorId for system). */
+/** Correct AuditLog attribution for any actor (null actorId for system). _/
 export function auditActorFields(actor: Actor): { actorId: string | null; actorType: 'human' | 'system' };
-Replace all 10 call sites with ...auditActorFields(actor). Move SYSTEM_ACTOR out of keyword-discovery-service.ts (it is an auth primitive) and import it there. Do not re-export from both files: index.ts uses export * and a duplicate export is a build error.
+Replace all 10 call sites with ...auditActorFields(actor). Move SYSTEM_ACTOR out of keyword-discovery-service.ts (it is an auth primitive) and import it there. Do not re-export from both files: index.ts uses export _ and a duplicate export is a build error.
 
 Do not create a User row named system to satisfy the FK. That hands the cron a human identity and dissolves both the audit guarantee and the publish guard at once.
 
@@ -73,10 +73,10 @@ generateArticleDraft does parseKeywordSeedList(input.keyword)[0] (article-servic
 Fix by making the automated path id-based, leaving the human free-text path untouched:
 
 export interface GenerateArticleDraftInput {
-  siteId: string;
-  keyword: string;        // free-text path (dashboard). Ignored when keywordId is set.
-  keywordId?: string;     // automated path: draft this exact row, term used verbatim
-  instructions?: string;
+siteId: string;
+keyword: string; // free-text path (dashboard). Ignored when keywordId is set.
+keywordId?: string; // automated path: draft this exact row, term used verbatim
+instructions?: string;
 }
 When keywordId is set: load the row, assert siteId matches, use row.term with no seed-list parsing, and in createDraftRecords replace the keyword.upsert (:363-367) with tx.keyword.update({ where: { id }, data: { status: 'DONE' } }).
 
@@ -87,15 +87,10 @@ docker-compose.yml:118 launches the dev server with -u http://worker:3100/api/in
 
 A second failure runs the opposite way: compose publishes the dev server on host 8289, but the SDK's dev-mode default target is 127.0.0.1:8288, so inngest.send() from a host-run worker posts into the void. .env.example never mentions INNGEST_DEV.
 
-  inngest:
-    command:
-      - inngest
-      - dev
-      - -u
-      - ${INNGEST_DISCOVERY_URL:-http://host.docker.internal:4100/api/inngest}
-    extra_hosts: ['host.docker.internal:host-gateway']   # Linux parity
-    ports: ['8289:8288']
-    # drop depends_on: [worker], discovery no longer uses compose DNS
+inngest:
+command: - inngest - dev - -u - ${INNGEST_DISCOVERY_URL:-http://host.docker.internal:4100/api/inngest}
+extra_hosts: ['host.docker.internal:host-gateway'] # Linux parity
+ports: ['8289:8288'] # drop depends_on: [worker], discovery no longer uses compose DNS
 Port 4100 is the published worker port in both modes: tsx serves it directly on the host (server.ts:9), and the container publishes 4100:3100 (docker-compose.yml:95). One URL, both modes, no compose profiles.
 
 Also: add INNGEST_DEV=http://localhost:8289 to .env.example and .env; add EMAIL_SERVER: smtp://mailpit:1025 plus EMAIL_FROM to the compose worker service (it has neither today, so the digest cannot send from the container) and mailpit to its depends_on; sync the stale ports in AGENTS.md (still says worker :3100 and Postgres :5432).
@@ -106,20 +101,20 @@ Inngest cron strings are static and only re-register on worker restart, so caden
 
 Everything here is deterministic with an injected now, so no DB and no Inngest, fully unit-testable:
 
-export function rollingWindowStart(now: Date, days?: number): Date;         // default 7
-export function derivedSpacingMinutes(articlesPerWeek: number): number;     // 10080 / N
-export function effectiveSpacingMinutes(config: PacingConfig): number;      // override > 0 else derived
+export function rollingWindowStart(now: Date, days?: number): Date; // default 7
+export function derivedSpacingMinutes(articlesPerWeek: number): number; // 10080 / N
+export function effectiveSpacingMinutes(config: PacingConfig): number; // override > 0 else derived
 export function isWithinRunWindow(now: Date, window: RunWindow): boolean;
 export function decidePacing(config: PacingConfig, inputs: PacingInputs): PacingDecision;
 
 type PacingSkipReason = 'paused' | 'outside_run_window' | 'weekly_target_met'
-  | 'unreviewed_backlog_full' | 'spacing_not_elapsed' | 'no_queued_keywords';
+| 'unreviewed_backlog_full' | 'spacing_not_elapsed' | 'no_queued_keywords';
 
 interface PacingDecision {
-  slots: 0 | 1;                       // structurally capped at 1: the key safety property
-  reason: PacingSkipReason | 'ok';
-  detail: { windowStart: Date; spacingMinutes: number; nextEligibleAt: Date | null;
-            remainingThisWeek: number; backlogHeadroom: number };
+slots: 0 | 1; // structurally capped at 1: the key safety property
+reason: PacingSkipReason | 'ok';
+detail: { windowStart: Date; spacingMinutes: number; nextEligibleAt: Date | null;
+remainingThisWeek: number; backlogHeadroom: number };
 }
 slots capped at 1 per site per tick bounds worst-case budget overshoot to a single article. Throughput is not the constraint: at 5/week the spacing is 33.6h, and a 15-minute tick only becomes the bottleneck above 672 articles/week.
 
@@ -128,9 +123,9 @@ Two decisions worth stating:
 Count Article.createdAt in a rolling 7 days, and human-generated articles count too. The weekly number is a cadence-and-cost budget for the site; excluding hand-made drafts would let total output reach 2N and silently double spend against a $50/month budget. Same for spacing: measure from the newest article of any origin, so an auto draft never stacks on top of a human burst.
 The backlog cap counts PENDING_REVIEW plus CHANGES_REQUESTED. Both are unreviewed human work; capping only the former lets an ignored changes-requested pile grow without ever throttling.
 DB helpers in packages/core/src/services/pipeline-service.ts
-/** ACTIVE + autopilotEnabled + HAS a style guide. */
+/** ACTIVE + autopilotEnabled + HAS a style guide. \*/
 export async function listAutopilotSites(db: PrismaClient): Promise<AutopilotSite[]>;
-/** Batched: 3 groupBy queries total, never N+1 per site. */
+/** Batched: 3 groupBy queries total, never N+1 per site. \*/
 export async function loadSiteThroughput(db, siteIds: string[], windowStart: Date): Promise<Map<string, SiteThroughput>>;
 export async function claimNextKeyword(db, siteId: string): Promise<ClaimedKeyword | null>;
 export async function releaseKeyword(db, keywordId: string, to: 'QUEUED' | 'SKIPPED'): Promise<boolean>;
@@ -140,21 +135,21 @@ The style-guide requirement lives in listAutopilotSites, not in the draft functi
 The atomic claim is the only thing that truly prevents double-drafting:
 
 UPDATE "Keyword" k SET status = 'IN_PROGRESS'::"KeywordStatus", "claimedAt" = NOW()
- WHERE k.id = (
-   SELECT c.id FROM "Keyword" c
-    WHERE c."siteId" = $1 AND c.status = 'QUEUED'::"KeywordStatus"
-      AND NOT EXISTS (SELECT 1 FROM "Article" a WHERE a."keywordId" = c.id)
-    ORDER BY c.priority DESC, c."discoveryScore" DESC NULLS LAST, c."sourcedAt" ASC
-    LIMIT 1 FOR UPDATE SKIP LOCKED)
- RETURNING k.id, k.term, k."siteId", k.source
+WHERE k.id = (
+SELECT c.id FROM "Keyword" c
+WHERE c."siteId" = $1 AND c.status = 'QUEUED'::"KeywordStatus"
+AND NOT EXISTS (SELECT 1 FROM "Article" a WHERE a."keywordId" = c.id)
+ORDER BY c.priority DESC, c."discoveryScore" DESC NULLS LAST, c."sourcedAt" ASC
+LIMIT 1 FOR UPDATE SKIP LOCKED)
+RETURNING k.id, k.term, k."siteId", k.source
 FOR UPDATE SKIP LOCKED makes concurrent ticks pick different rows instead of racing. This is the one place raw SQL is justified: updateMany cannot express RETURNING over a locked subselect, and DB-level atomicity is the behaviour. releaseKeyword must carry a where: { status: 'IN_PROGRESS' } CAS predicate so a late failure can never flip a DONE keyword back to QUEUED and cause a second draft.
 
 Events in packages/core/src/pipeline/events.ts (Zod only, no inngest import)
-'scribe/keyword.claimed'      { siteId, keywordId, term, source, claimedAt, tickId }
-'scribe/article.drafted'      { siteId, articleId, keywordId, title, wordCount, seoScore, enrichment }
-'scribe/discovery.requested'  { siteId, reason: 'buffer_low' | 'weekly_cron' | 'manual' }
+'scribe/keyword.claimed' { siteId, keywordId, term, source, claimedAt, tickId }
+'scribe/article.drafted' { siteId, articleId, keywordId, title, wordCount, seoScore, enrichment }
+'scribe/discovery.requested' { siteId, reason: 'buffer_low' | 'weekly_cron' | 'manual' }
 'scribe/pipeline.tick.requested' { siteId?, actorId }
-'article.approved'            { articleId, siteId, actorId, reviewId, version, approvedAt }
+'article.approved' { articleId, siteId, actorId, reviewId, version, approvedAt }
 Wire them via new EventSchemas().fromZod({...}) on the client (apps/worker/src/inngest/client.ts:8). inngest@3.54.2 is installed and exports EventSchemas, NonRetriableError, and RetryAfterError.
 
 EventSchemas is compile-time only. It does not validate event.data at runtime. Per §10.1 #5, every handler's first line must be Schema.parse(event.data).
@@ -164,25 +159,25 @@ The tick emits one event per article rather than looping inline, because: the ti
 
 Enrichment stays as step.run calls inside the draft function. The extras are short, share the article context, and run after createDraftRecords commits, so "the article reached PENDING_REVIEW" becomes a structural guarantee rather than a convention.
 
-Function	Trigger	Flow control
-pipeline-tick	cron: */15 * * * * plus scribe/pipeline.tick.requested	retries: 0, concurrency: 1
-article-autodraft	scribe/keyword.claimed	retries: 2, idempotency: 'event.data.keywordId', concurrency: [{key: siteId, limit: 1}, {limit: N}], onFailure
-discovery-run	scribe/discovery.requested	retries: 1, rateLimit: {limit: 1, period: '24h', key: siteId}
-review-digest	cron: 0 * * * *	retries: 1, concurrency: 1
-publish-run	article.approved	retries: 3, concurrency: {key: articleId, limit: 1}
+Function Trigger Flow control
+pipeline-tick cron: _/15 _ \* \* _ plus scribe/pipeline.tick.requested retries: 0, concurrency: 1
+article-autodraft scribe/keyword.claimed retries: 2, idempotency: 'event.data.keywordId', concurrency: [{key: siteId, limit: 1}, {limit: N}], onFailure
+discovery-run scribe/discovery.requested retries: 1, rateLimit: {limit: 1, period: '24h', key: siteId}
+review-digest cron: 0 _ \* \* \* retries: 1, concurrency: 1
+publish-run article.approved retries: 3, concurrency: {key: articleId, limit: 1}
 Refactor weeklyKeywordDiscovery to emit scribe/discovery.requested instead of calling runSiteDiscovery inline, so there is one discovery path and one place for flow control. The rateLimit keyed on siteId stops the weekly cron and a buffer-low tick paying for discovery twice in a day.
 
 Phase 3: drafting and enrichment worker
 apps/worker/src/functions/article-autodraft.ts. Every step calls an existing exported service function, unchanged apart from B1/B3. No drafting, scoring, or enrichment logic is rewritten.
 
-Step	Reuses	Fatal?
-draft	generateArticleDraft(prisma, SYSTEM_ACTOR, { siteId, keywordId, keyword: term }, { apiKey })	Fatal
-list-inline-images	articleImage.findMany	Fatal (cheap read)
-suggest-inline-images	suggestArticleInlineImages (only when count is 0)	best-effort
-taxonomy	autoAssignArticleTaxonomy	best-effort
-hero-image	generateArticleImage	best-effort
-inline-image-{id} xN	generateArticleInlineImage	best-effort each
-emit-drafted	step.sendEvent	best-effort
+Step Reuses Fatal?
+draft generateArticleDraft(prisma, SYSTEM_ACTOR, { siteId, keywordId, keyword: term }, { apiKey }) Fatal
+list-inline-images articleImage.findMany Fatal (cheap read)
+suggest-inline-images suggestArticleInlineImages (only when count is 0) best-effort
+taxonomy autoAssignArticleTaxonomy best-effort
+hero-image generateArticleImage best-effort
+inline-image-{id} xN generateArticleInlineImage best-effort each
+emit-drafted step.sendEvent best-effort
 Only the draft is fatal, because without it there is nothing to review. Every extra already has a one-click dashboard button (generateArticleImageAction, autoAssignTaxonomyAction, suggestInlineImagesAction) for the human to fill any gap, each independently calls assertWithinBudget(db, { articleId }) so they self-limit against the $2/article ceiling, and the failure mode is a visible missing image.
 
 Two step mechanics that bite if ignored:
@@ -193,9 +188,9 @@ onFailure releases the claim to SKIPPED, not QUEUED. SKIPPED is an unused enum v
 
 Budget safety. Gate the tick before it claims, not the draft after it pays:
 
-const stopAt = settings.monthly_budget_usd * (1 - settings.autopilot_budget_reserve_pct / 100);
+const stopAt = settings.monthly_budget_usd \* (1 - settings.autopilot_budget_reserve_pct / 100);
 if (settings.monthly_budget_usd > 0 && await monthToDateSpendUsd(prisma) >= stopAt)
-  return { skipped: 'budget_reserve_reached' };
+return { skipped: 'budget_reserve_reached' };
 The reserve matters because assertWithinBudget is documented as a soft pre-check (cost/usage.ts:11-14). Without it autopilot eats the last dollar and the human has no headroom left to regenerate a bad draft.
 
 Map BudgetExceededError to NonRetriableError in the worker. Inngest defaults to 4 attempts and the budget will not change inside the backoff, so retrying burns four runs for one deterministic outcome. packages/core never imports NonRetriableError: core throws typed errors, the worker maps them.
@@ -209,7 +204,7 @@ The event
 approveArticle gains an injected emitter, matching the repo's existing DI style (options.fetchFn, DiscoveryUsageSink):
 
 export async function approveArticle(db, actor, id,
-  options: { emit?: ArticleApprovedEmitter } = {}): Promise<ApproveArticleResult>;
+options: { emit?: ArticleApprovedEmitter } = {}): Promise<ApproveArticleResult>;
 
 type PublishQueueOutcome = 'queued' | 'not_configured' | 'blocked_preconditions' | 'emit_failed';
 emit omitted means no publish, so every existing core integration test that calls approveArticle(db, admin, id) stays green, including the republish test at services.integration.test.ts:868. That is the decisive argument for the event path over calling publishArticleToCms inline.
@@ -225,11 +220,11 @@ The guard in packages/core/src/auth/human-actor.ts
 The load-bearing field is reviewId, not actorId. Anyone reaching the Inngest event API can forge actorId (the dev server runs with no event key). Nobody can forge a Review row: Review.reviewerId is a FK to User.id, and its only writer sits behind authorize(actor, 'article.approve') behind requireActor(). The guard is anchored on referential integrity against a table only an authenticated human session can write.
 
 export async function assertHumanPublishActor(db, input: {
-  claimed: { id?: string | null; role?: Role };   // untrusted, including the role
-  articleId: string;
-  origin: 'human_session' | 'approval_event';
-  reviewId?: string;                              // REQUIRED when origin is approval_event
-  maxApprovalAgeMs?: number;                      // default 24h
+claimed: { id?: string | null; role?: Role }; // untrusted, including the role
+articleId: string;
+origin: 'human_session' | 'approval_event';
+reviewId?: string; // REQUIRED when origin is approval_event
+maxApprovalAgeMs?: number; // default 24h
 }): Promise<PublishGrant>;
 Verification order, each line load-bearing:
 
@@ -295,24 +290,24 @@ autoGenerated is for reporting and digest scoping only, never for pacing. That k
 New settings in settings.ts
 All default off or conservative, matching how discovery_cron_enabled ships false. Nothing changes behaviour until the user opts in.
 
-Key	Default	Meaning
-autopilot_enabled	false	master switch
-autopilot_articles_per_week	3	the dial the user asked for, per site
-autopilot_min_spacing_minutes	0	0 derives evenly from the weekly target
-autopilot_max_unreviewed	5	backlog cap; 0 is unlimited
-autopilot_max_concurrent_drafts	1	capped at 5
-autopilot_max_inline_images	4	cost ceiling per article
-autopilot_budget_reserve_pct	10	headroom held back for human work
-autopilot_generate_hero_image	true	
-autopilot_generate_inline_images	true	
-autopilot_assign_taxonomy	true	
-autopilot_stale_claim_minutes	60	reaper threshold
-autopilot_keyword_buffer_low_water	5	below this, auto-run discovery
-autopilot_run_window	all day, every day	{ daysOfWeek, startHour, endHour, timezoneOffsetMinutes }
-review_digest_enabled	false	
-review_digest_hour_utc	8	
-review_digest_recipients	[]	empty means all ADMIN/EDITOR
-review_digest_min_articles	1	
+Key Default Meaning
+autopilot_enabled false master switch
+autopilot_articles_per_week 3 the dial the user asked for, per site
+autopilot_min_spacing_minutes 0 0 derives evenly from the weekly target
+autopilot_max_unreviewed 5 backlog cap; 0 is unlimited
+autopilot_max_concurrent_drafts 1 capped at 5
+autopilot_max_inline_images 4 cost ceiling per article
+autopilot_budget_reserve_pct 10 headroom held back for human work
+autopilot_generate_hero_image true
+autopilot_generate_inline_images true
+autopilot_assign_taxonomy true
+autopilot_stale_claim_minutes 60 reaper threshold
+autopilot_keyword_buffer_low_water 5 below this, auto-run discovery
+autopilot_run_window all day, every day { daysOfWeek, startHour, endHour, timezoneOffsetMinutes }
+review_digest_enabled false
+review_digest_hour_utc 8
+review_digest_recipients [] empty means all ADMIN/EDITOR
+review_digest_min_articles 1
 Leave briefs_per_run and max_regen alone. max_regen is reserved for the Phase 5 QA loop per the Decisions Log, and overloading briefs_per_run would be worse than a clearly named new key.
 
 The settings write path breaks, so watch this part
@@ -350,11 +345,11 @@ Do not unit-test Inngest step orchestration; that is genuinely exercised by the 
 
 Verification
 docker compose up -d postgres inngest mailpit
-pnpm db:migrate                      # then pnpm dev
+pnpm db:migrate # then pnpm dev
 The one diagnostic that matters: open http://localhost:8289, go to Apps, and confirm scribe lists pipeline-tick, article-autodraft, discovery-run, review-digest, and publish-run. An empty Apps list means the -u URL is wrong and nothing else will work.
 curl -s http://localhost:4100/api/inngest | head -c 400 returns introspection JSON with those ids.
 Dev loop (a 15-minute cron is too slow to iterate on): send scribe/keyword.claimed by hand from the dev UI with a real keywordId to exercise the whole draft-plus-enrich path in isolation, or hit "Run autopilot now" to exercise pacing. Editing a cron string needs a worker restart.
-Watch it: dev UI, then Runs, where the article-autodraft run lists each step (draft, taxonomy, hero-image, inline-image-*) with timing, output, and per-step retry history.
+Watch it: dev UI, then Runs, where the article-autodraft run lists each step (draft, taxonomy, hero-image, inline-image-\*) with timing, output, and per-step retry history.
 Cross-check in pnpm db:studio: Keyword.status moving QUEUED → IN_PROGRESS → DONE with claimedAt cleared; a new Article at PENDING_REVIEW with autoGenerated = true; ArticleImage rows with dataBase64 populated; one UsageRecord per paid call; and AuditLog rows with actorType = 'system' and actorId = null, that last one being the proof B1 is fixed.
 Pacing: set autopilot_articles_per_week to 1 and confirm the second tick skips with weekly_target_met. Set autopilot_max_unreviewed to 1, leave an article unreviewed, and confirm unreviewed_backlog_full. Both are visible in the tick run's return value.
 Digest: read the mail at http://localhost:8026.
@@ -363,18 +358,20 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build green at every phase boun
 Note: pnpm is not on PATH in this shell (reachable only via corepack pnpm), and turbo needs a pnpm binary on PATH to run its tasks.
 
 Ordered execution
-#	Phase	Gate
-1	Infra fix (compose -u, INNGEST_DEV, worker SMTP, AGENTS.md ports)	dev UI lists discovery-weekly
-2	B1 and B3 fixes with tests (system-actor.ts, 10 audit sites, keywordId path)	audit rows with null actorId
-3	Migration (claimedAt, autoGenerated, reviewNotifiedAt, Site.autopilot*, 2 indexes)	pnpm db:migrate
-4	Core pure logic and tests (pacing.ts, events.ts, transition table)	unit tests green
-5	pipeline-service.ts plus concurrent-claim integration test	5 concurrent claims, 0 duplicates
-6	Settings schema and write path (BOOLEAN_SETTINGS, nested assembly)	save round-trips in the UI
-7	Worker: EventSchemas, pipeline-tick, article-autodraft, discovery-run	one full auto draft
-8	Phase 4 security work (human-actor.ts, transitionArticle, idempotency, publish-run)	the SYSTEM_ACTOR negative test
-9	Digest (mailer plus cron)	mail lands in Mailpit
-10	Dashboard (autopilot card, status panel, Run now, Requeue)	pacing dial visibly changes behaviour
-11	PROGRESS.md Decisions Log plus skill pipeline section	
+
+# Phase Gate
+
+1 Infra fix (compose -u, INNGEST_DEV, worker SMTP, AGENTS.md ports) dev UI lists discovery-weekly
+2 B1 and B3 fixes with tests (system-actor.ts, 10 audit sites, keywordId path) audit rows with null actorId
+3 Migration (claimedAt, autoGenerated, reviewNotifiedAt, Site.autopilot\*, 2 indexes) pnpm db:migrate
+4 Core pure logic and tests (pacing.ts, events.ts, transition table) unit tests green
+5 pipeline-service.ts plus concurrent-claim integration test 5 concurrent claims, 0 duplicates
+6 Settings schema and write path (BOOLEAN_SETTINGS, nested assembly) save round-trips in the UI
+7 Worker: EventSchemas, pipeline-tick, article-autodraft, discovery-run one full auto draft
+8 Phase 4 security work (human-actor.ts, transitionArticle, idempotency, publish-run) the SYSTEM_ACTOR negative test
+9 Digest (mailer plus cron) mail lands in Mailpit
+10 Dashboard (autopilot card, status panel, Run now, Requeue) pacing dial visibly changes behaviour
+11 PROGRESS.md Decisions Log plus skill pipeline section
 Steps 7 and 8 can be built in either order, but do not enable autopilot_enabled in a real environment until step 8 has landed, since that is the phase which makes B2 unexploitable.
 
 Decisions and flagged deviations for PROGRESS.md
@@ -385,4 +382,4 @@ transitionArticle was a pre-existing violation of CLAUDE.md's domain rules (8 ra
 The randomUUID() idempotency key was a pre-existing violation of the documented publish:{articleId}:{currentVersion} rule, rendering a @unique index inert.
 PUBLISHING was being written with no transaction and no audit row, a standing §10.1 #6 violation, fixed here.
 Stale JWT roles affect every action, not just publish. Out of scope, worth a follow-up.
-Optional hardening deliberately not included: requiring User.emailVerified at the publish step. It is the only DB-side evidence a magic-link sign-in completed, but if the owner's existing row has a null value it locks them out. Verify against the real DB before adding.
+Optional hardening deliberately not included: requiring User.emailVerified at the publish step. It is the only DB-side evidence a magic-link sign-in completed, but if the admin's existing row has a null value it locks them out. Verify against the real DB before adding.

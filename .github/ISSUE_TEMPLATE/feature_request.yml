@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose a change or addition
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Scribe makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should happen instead. Mention which part (dashboard, worker, pipeline, publishing, deploy).
+    validations:
+      required: true
+  - type: checkboxes
+    id: gate
+    attributes:
+      label: Human approval gate
+      options:
+        - label: This change keeps the rule that nothing publishes without a human approving it.
+          required: true

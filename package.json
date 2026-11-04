@@ -2,6 +2,7 @@
   "name": "scribe",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Article Engine (codename Scribe): scheduled SEO article pipeline with a mandatory human approval gate.",
   "packageManager": "pnpm@10.26.1",
   "engines": {
