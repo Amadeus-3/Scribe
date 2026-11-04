@@ -18,6 +18,15 @@ enum Role {
   VIEWER
 }
 
+// INVITED: an ADMIN pre-created the row; the first magic-link sign-in makes it
+// ACTIVE. DISABLED: refused at sign-in and dropped from the session on the next
+// token refresh. Access is by invitation only (no open sign-up, Spec §10.2).
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
 enum CmsType {
   WORDPRESS
   STRAPI
@@ -83,6 +92,12 @@ model User {
   email         String     @unique
   name          String?
   role          Role       @default(VIEWER)
+  status        UserStatus @default(ACTIVE)
+  // Who invited this user (a User.id). Plain string, not a relation, so an
+  // inviter can never be blocked from deletion by their invitees.
+  invitedById   String?
+  invitedAt     DateTime?
+  lastLoginAt   DateTime?
   // Auth.js fields
   emailVerified DateTime?
   image         String?

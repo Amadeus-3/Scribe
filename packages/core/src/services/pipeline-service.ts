@@ -278,7 +278,7 @@ export async function resolveDigestRecipients(
 ): Promise<string[]> {
   if (configured.length > 0) return configured;
   const users = await db.user.findMany({
-    where: { role: { in: ['ADMIN', 'EDITOR'] } },
+    where: { role: { in: ['ADMIN', 'EDITOR'] }, status: 'ACTIVE' },
     select: { email: true },
   });
   return users.map((user) => user.email).filter((email): email is string => Boolean(email));
