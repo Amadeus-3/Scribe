@@ -36,7 +36,7 @@
     "@types/nodemailer": "^6.4.17",
     "@vitest/coverage-v8": "^2.1.8",
     "dotenv-cli": "^8.0.0",
-    "pino-pretty": "^13.0.0",
+    "pino-pretty": "^13.2.0",
     "prisma": "^6.2.1",
     "vitest": "^2.1.8"
   }
