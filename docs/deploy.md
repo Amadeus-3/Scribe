@@ -16,7 +16,8 @@ The VPS never builds anything. CI builds the image on GitHub, the VPS pulls it.
 
 - Ubuntu 22.04 or 24.04, **2 GB RAM minimum** (4 GB comfortable), 20 GB disk.
 - A domain (or subdomain) you control, e.g. `scribe.example.com`.
-- An SMTP provider for the magic-link sign-in email and the review digest
+- An SMTP provider for sign-in emails, invitations and the review digest. It
+  can be configured later from the dashboard; see step 7.
   (Resend, Postmark, Mailgun, SES, your mail host). Port 587 with STARTTLS.
 - OpenRouter and Gemini API keys.
 
@@ -190,6 +191,16 @@ Then open `https://your-domain`, enter your email, click the link. The first
 account becomes ADMIN (if you set `ALLOWED_SIGNIN_EMAILS`, it must be one of
 those). Invite the rest of the team from the Team page; nobody else can get in.
 
+**No SMTP yet?** On an instance with zero users the sign-in link is written to
+the web log instead of being emailed:
+
+```bash
+docker compose logs web | grep signInUrl
+```
+
+Open that link, then set SMTP under Settings → Email and press "Send test email
+to me". This log path closes as soon as the first account exists.
+
 ## 8. Verify the pipeline is alive
 
 Inngest's UI is bound to the server's loopback only (it has no auth). Tunnel in:
@@ -267,7 +278,7 @@ sudo apt-get update && sudo apt-get upgrade -y && docker compose pull && docker 
 - **Caddy (profile B): certificate errors / site unreachable.** DNS must resolve
   to the VPS and ports 80 + 443 must be free and open. `docker compose logs caddy`.
 - **Sign-in email never arrives.** `docker compose logs web | grep -i email`.
-  Check `EMAIL_SERVER` syntax and that the provider allows the `EMAIL_FROM`
+  Check Settings → Email (or `EMAIL_SERVER`) and that the provider allows the From
   domain. On a staffed instance the address must have been invited from the
   Team page (or be in `ALLOWED_SIGNIN_EMAILS`).
 - **Deploy job fails with `.env missing`.** Step 4 was skipped.

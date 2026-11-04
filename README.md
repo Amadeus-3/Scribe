@@ -30,7 +30,7 @@ docker compose up -d --build
 ```
 
 That starts Postgres, Inngest, Mailpit, the web app on http://localhost:4000
-and the worker. Request a sign-in link and read it at http://localhost:8025.
+and the worker. Request a sign-in link and read it at http://localhost:8026.
 The first account becomes ADMIN; invite everyone else from the Team page. Then in Settings add an OpenRouter key and a
 Gemini key, create a site with its Strapi token and style guide, seed some
 keywords, and turn autopilot on.
@@ -68,8 +68,8 @@ Details and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 Provider keys (OpenRouter, Gemini, Google Search Console), CMS credentials,
 model choices, budgets and autopilot pacing are all set in the dashboard and
 stored encrypted. The environment file holds only infrastructure: database
-URL, Inngest keys, the auth and encryption secrets, and SMTP for sign-in
-emails. See [.env.example](.env.example).
+URL, Inngest keys, and the auth and encryption secrets. SMTP can live there
+too, or be set from Settings → Email. See [.env.example](.env.example).
 
 ## Status
 
@@ -77,8 +77,6 @@ Working end to end for Strapi sites. Known gaps, tracked in
 [PROGRESS.md](PROGRESS.md):
 
 - WordPress publisher not implemented.
-- SMTP still lives in the environment file; dashboard email settings are
-  planned ([docs/open-source-plan.md](docs/open-source-plan.md)).
 - Playwright end-to-end coverage of the review gate is pending.
 
 ## Contributing
