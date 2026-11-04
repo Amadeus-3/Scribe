@@ -3,6 +3,9 @@ import { countUsers, prisma } from '@scribe/core';
 
 export const metadata = { title: 'Sign in — Scribe' };
 
+// Reads the user count, so it cannot be prerendered at build time.
+export const dynamic = 'force-dynamic';
+
 export default async function LoginPage() {
   // A fresh instance explains itself: the first email in becomes the admin.
   const isFreshInstance = (await countUsers(prisma)) === 0;
