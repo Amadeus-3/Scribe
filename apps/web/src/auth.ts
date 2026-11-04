@@ -8,9 +8,13 @@ import {
   decideSignIn,
   getUserAccess,
   recordSignIn,
+  resolveEmailConfig,
+  sendEmailWith,
+  countUsers,
 } from '@scribe/core';
 import type { Role } from '@scribe/core';
 import { authConfig } from './auth.config';
+import { magicLinkHtml, magicLinkText } from '@/lib/magic-link-email';
 
 /**
  * Full Auth.js config (Node runtime): email magic link + invitation-only access
@@ -28,10 +32,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   providers: [
     Nodemailer({
-      // Real value injected at runtime (compose → Mailpit). The fallback keeps
-      // provider init from throwing during `next build` page-data collection.
-      server: process.env.EMAIL_SERVER || 'smtp://localhost:1025',
-      from: process.env.EMAIL_FROM ?? 'Scribe <no-reply@example.com>',
+      // Placeholders: the provider insists on a server, but delivery below
+      // resolves SMTP at request time (Settings > Email first, env second), so
+      // a config saved in the dashboard takes effect without a restart.
+      server: 'smtp://localhost:1025',
+      from: 'Scribe <no-reply@example.com>',
+      async sendVerificationRequest({ identifier, url }) {
+        const { host } = new URL(url);
+        const resolved = await resolveEmailConfig(prisma);
+        if (resolved) {
+          await sendEmailWith(resolved.config, {
+            to: [identifier],
+            subject: `Sign in to ${host}`,
+            text: magicLinkText({ url, host }),
+            html: magicLinkHtml({ url, host }),
+          });
+          return;
+        }
+        // Bootstrap: a fresh install has no SMTP and no admin to configure it.
+        // Print the first link to the server log instead. This door closes the
+        // moment the first user exists, so it can never admit anyone to a
+        // staffed instance; the signIn callback has already applied the
+        // bootstrap allowlist rule before we get here.
+        if ((await countUsers(prisma)) === 0) {
+          logger.warn(
+            { signInUrl: url, email: identifier },
+            'EMAIL NOT CONFIGURED: open this link to create the first admin account, then set SMTP in Settings > Email',
+          );
+          return;
+        }
+        throw new Error(
+          'Email delivery is not configured; an admin must set SMTP in Settings > Email.',
+        );
+      },
     }),
   ],
   callbacks: {

@@ -34,6 +34,8 @@ export * from './pipeline/events';
 // Notifications
 export * from './notify/review-digest';
 export * from './notify/mailer';
+export * from './notify/email-config';
+export * from './notify/test-email';
 
 // AI providers
 export * from './ai/openrouter';

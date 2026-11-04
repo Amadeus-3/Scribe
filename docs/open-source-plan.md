@@ -8,6 +8,11 @@ secret is ever required in source.
 This plan was written against the code as of 2026-11-04 (main at the merge of
 PR #2). Each phase lists what exists, what changes, and the acceptance check.
 
+**Status (2026-11-04):** Phases C and D landed in PR #3, Phase A in PR #9,
+Phase B in the PR after it. What remains before flipping the repo public is
+GitHub-side: make the GHCR package public, add branch protection on `main`
+(require CI), then change visibility. Phase E is post-launch.
+
 ## Audit: where configuration lives today
 
 | Item                                 | Today                                                                      | Open-source target                      |
