@@ -186,8 +186,9 @@ Merge or push to `main`. CI runs; when it passes, **Deploy** runs:
 
 Or trigger it by hand: Actions → Deploy → Run workflow.
 
-Then open `https://your-domain`, enter an allowlisted email, click the link.
-The first account becomes ADMIN.
+Then open `https://your-domain`, enter your email, click the link. The first
+account becomes ADMIN (if you set `ALLOWED_SIGNIN_EMAILS`, it must be one of
+those). Invite the rest of the team from the Team page; nobody else can get in.
 
 ## 8. Verify the pipeline is alive
 
@@ -267,7 +268,8 @@ sudo apt-get update && sudo apt-get upgrade -y && docker compose pull && docker 
   to the VPS and ports 80 + 443 must be free and open. `docker compose logs caddy`.
 - **Sign-in email never arrives.** `docker compose logs web | grep -i email`.
   Check `EMAIL_SERVER` syntax and that the provider allows the `EMAIL_FROM`
-  domain. The address must also be in `ALLOWED_SIGNIN_EMAILS`.
+  domain. On a staffed instance the address must have been invited from the
+  Team page (or be in `ALLOWED_SIGNIN_EMAILS`).
 - **Deploy job fails with `.env missing`.** Step 4 was skipped.
 - **Deploy job skipped entirely.** `VPS_HOST` secret is unset; the image was
   still pushed.

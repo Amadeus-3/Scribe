@@ -97,7 +97,7 @@ admin/root credentials).
 
 - Keywords: **manual seed only** (v1); `KeywordSource` interface, no paid API yet.
 - CMS: **WordPress or Strapi**; default publish status **draft** in the target CMS.
-- Auth: **email magic link + allowlist** (no open sign-up).
+- Auth: **email magic link + invitations** (Team page; first user → ADMIN; `ALLOWED_SIGNIN_EMAILS` optional bootstrap guard). No open sign-up.
 - Brief gate: **auto-approve** (manual path implemented but off).
 - Hosting: **self-hosted Docker Compose**.
 - Budget: **$50/mo**, **$2/article** ceiling (seeded into Settings, editable in UI).
