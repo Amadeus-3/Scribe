@@ -51,9 +51,7 @@ export const reviewDigest = inngest.createFunction(
       resolveDigestRecipients(prisma, settings.review_digest_recipients),
     );
 
-    const sent = await step.run('send', () =>
-      sendEmail({ to: recipients, ...digest }),
-    );
+    const sent = await step.run('send', () => sendEmail(prisma, { to: recipients, ...digest }));
     if (!sent) {
       return { skipped: 'email not configured', pending: articles.length };
     }
