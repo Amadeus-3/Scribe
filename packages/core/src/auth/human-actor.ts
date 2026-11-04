@@ -58,6 +58,7 @@ export type HumanActorDenialReason =
   | 'reserved_actor_id'
   | 'missing_actor_id'
   | 'actor_not_found'
+  | 'actor_disabled'
   | 'role_not_permitted'
   | 'role_claim_mismatch'
   | 'missing_review_proof'
@@ -179,12 +180,17 @@ export async function assertHumanPublishActor(
 
   const user = await db.user.findUnique({
     where: { id: claimedId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, status: true },
   });
   // The real backstop: rename the sentinel out of RESERVED_ACTOR_IDS and there
   // is still no User row for it, so it still cannot publish.
   if (!user) {
     return deny(db, input, 'actor_not_found');
+  }
+  // A disabled account may still hold a JWT for a few minutes; the live row,
+  // not the token, decides whether its approval can reach the CMS.
+  if (user.status !== 'ACTIVE') {
+    return deny(db, input, 'actor_disabled');
   }
 
   if (!HUMAN_PUBLISH_ROLES.includes(user.role)) {

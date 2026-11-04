@@ -143,6 +143,16 @@ describe('Spec §10.1.1 — no autonomous publishing', () => {
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
+  it('refuses a disabled admin even though the role still matches', async () => {
+    await approveArticle(db, admin, articleId);
+    await db.user.update({ where: { id: admin.id }, data: { status: 'DISABLED' } });
+    const fetchFn = okFetch();
+    await expect(
+      publishArticleToCms(db, { id: admin.id, role: 'ADMIN' }, articleId, { fetchFn }),
+    ).rejects.toMatchObject({ reason: 'actor_disabled' });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('refuses a stale session claiming a role the database no longer grants', async () => {
     // Auth.js uses JWT sessions and only re-reads the role at sign-in, so a
     // demoted user keeps asserting ADMIN until they log in again.

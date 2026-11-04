@@ -16,8 +16,8 @@ pnpm dev                        # web on :4000, worker on :4100
 ```
 
 Mailpit at http://localhost:8025 shows the magic-link email so you can sign in
-without a real mail server. Set `ALLOWED_SIGNIN_EMAILS` in `.env` to the
-address you use. The first user to sign in becomes ADMIN.
+without a real mail server. The first user to sign in becomes ADMIN and can
+invite others from the Team page.
 
 ## Before you open a pull request
 

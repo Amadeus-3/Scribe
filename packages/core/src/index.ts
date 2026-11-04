@@ -14,6 +14,7 @@ export * from './crypto/encryption';
 export * from './auth/authorize';
 export * from './auth/system-actor';
 export * from './auth/human-actor';
+export * from './auth/sign-in-policy';
 
 // Observability
 export * from './observability/logger';
@@ -73,6 +74,7 @@ export * from './services/article-service';
 export * from './services/settings-service';
 export * from './services/provider-credential-service';
 export * from './services/keyword-discovery-service';
+export * from './services/user-service';
 
 // Database access + generated Prisma types and enums
 export type { Db } from './db/types';
