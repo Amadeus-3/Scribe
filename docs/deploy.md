@@ -125,6 +125,16 @@ No registry secret is needed. The workflow pushes to GitHub Container Registry
 with the built-in `GITHUB_TOKEN` and hands the VPS that same short-lived token
 to pull.
 
+**Running from a fork.** The deploy job is guarded by
+`if: github.repository == 'Amadeus-3/Scribe'` so a fork never tries to reach
+this project's server. In your fork, change that owner/name in
+`.github/workflows/deploy.yml`. The image name follows your repository
+automatically (`ghcr.io/<your-owner>/scribe`), so set
+`IMAGE=ghcr.io/<your-owner>/scribe` in `/opt/scribe/.env`, or leave `IMAGE`
+unset only if you use the upstream image. Make the package public once
+(GitHub → Packages → scribe → Package settings → Change visibility) or
+`docker compose pull` on the server will need a token.
+
 ## 6. Reverse proxy
 
 Pick one.
@@ -134,13 +144,16 @@ Pick one.
 This is the case when the VPS serves other sites: nginx owns ports 80/443, so
 Scribe's web container binds to `127.0.0.1:4010` and nginx forwards to it.
 
+Copy the server block from `deploy/nginx-scribe.conf`, substituting your
+hostname for `YOUR_DOMAIN` (the file is in the repo you cloned; from the server
+you can also fetch it from your fork's raw URL):
+
 ```bash
-sudo curl -fsSL https://raw.githubusercontent.com/Amadeus-3/Scribe/main/deploy/nginx-scribe.conf -o /etc/nginx/sites-available/scribe
+sed "s/YOUR_DOMAIN/scribe.example.com/" deploy/nginx-scribe.conf | sudo tee /etc/nginx/sites-available/scribe >/dev/null
 ```
 
-If the repo is private that URL needs a token; instead paste
-`deploy/nginx-scribe.conf` into `/etc/nginx/sites-available/scribe` by hand.
-Edit `server_name` if your domain differs, then:
+If you changed `WEB_BIND_PORT` in `/opt/scribe/.env`, edit the `proxy_pass`
+port to match. Then enable it:
 
 ```bash
 sudo ln -sf /etc/nginx/sites-available/scribe /etc/nginx/sites-enabled/scribe && sudo nginx -t && sudo systemctl reload nginx
@@ -149,7 +162,7 @@ sudo ln -sf /etc/nginx/sites-available/scribe /etc/nginx/sites-enabled/scribe &&
 Issue the certificate (certbot rewrites the file to add the 443 listener):
 
 ```bash
-sudo certbot --nginx -d scribe.wiselyrich.com --redirect
+sudo certbot --nginx -d scribe.example.com --redirect
 ```
 
 If `certbot` is missing: `sudo apt-get install -y certbot python3-certbot-nginx`.

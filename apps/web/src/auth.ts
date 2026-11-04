@@ -56,7 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   events: {
     async createUser({ user }) {
-      // The first user (the owner of this personal tool) becomes ADMIN.
+      // The first user to sign in on a fresh instance becomes ADMIN.
       const count = await prisma.user.count();
       if (count === 1 && user.id) {
         await prisma.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } });

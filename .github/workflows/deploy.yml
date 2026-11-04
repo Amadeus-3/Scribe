@@ -88,7 +88,8 @@ jobs:
   deploy:
     name: Redeploy VPS
     needs: [preflight, build]
-    if: needs.preflight.outputs.deploy == 'true'
+    # Forks that enable Actions must never try to reach this project's VPS.
+    if: github.repository == 'Amadeus-3/Scribe' && needs.preflight.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:

@@ -154,19 +154,19 @@ describe('scoreArticleSeo — meta description length bands', () => {
   const metaOf = (len: number) => `${KEYWORD} ${'a'.repeat(Math.max(0, len - KEYWORD.length - 1))}`;
 
   it('passes at 150 characters', () => {
-    expect(find(scoreArticleSeo({ ...base, metaDescription: metaOf(150) }), 'meta-length').status).toBe(
-      'pass',
-    );
+    expect(
+      find(scoreArticleSeo({ ...base, metaDescription: metaOf(150) }), 'meta-length').status,
+    ).toBe('pass');
   });
   it('warns at 100 characters', () => {
-    expect(find(scoreArticleSeo({ ...base, metaDescription: metaOf(100) }), 'meta-length').status).toBe(
-      'warn',
-    );
+    expect(
+      find(scoreArticleSeo({ ...base, metaDescription: metaOf(100) }), 'meta-length').status,
+    ).toBe('warn');
   });
   it('fails at 80 characters', () => {
-    expect(find(scoreArticleSeo({ ...base, metaDescription: metaOf(80) }), 'meta-length').status).toBe(
-      'fail',
-    );
+    expect(
+      find(scoreArticleSeo({ ...base, metaDescription: metaOf(80) }), 'meta-length').status,
+    ).toBe('fail');
   });
 });
 
@@ -180,15 +180,15 @@ describe('scoreArticleSeo — in-body images', () => {
   };
 
   it('warns when a long article has no in-body images', () => {
-    expect(find(scoreArticleSeo({ ...longBase, inlineImageCount: 0 }), 'inline-images').status).toBe(
-      'warn',
-    );
+    expect(
+      find(scoreArticleSeo({ ...longBase, inlineImageCount: 0 }), 'inline-images').status,
+    ).toBe('warn');
   });
 
   it('passes when a long article plans in-body images', () => {
-    expect(find(scoreArticleSeo({ ...longBase, inlineImageCount: 2 }), 'inline-images').status).toBe(
-      'pass',
-    );
+    expect(
+      find(scoreArticleSeo({ ...longBase, inlineImageCount: 2 }), 'inline-images').status,
+    ).toBe('pass');
   });
 
   it('passes a short article with only a hero image', () => {
@@ -232,17 +232,21 @@ describe('scoreArticleSeo — internal links (context-aware)', () => {
     const base = goodArticle();
     const md = base.contentMarkdown.replace(
       'See our [pour-over brewing guide](/guides/pour-over) and the standards from [the SCA](https://example.com).',
-      'See our [pour-over brewing guide](https://wiselyrich.com/blog/pour-over) for more.',
+      'See our [pour-over brewing guide](https://example.com/blog/pour-over) for more.',
     );
 
-    const withoutHost = scoreArticleSeo({ ...base, contentMarkdown: md, internalLinkCandidates: 5 });
+    const withoutHost = scoreArticleSeo({
+      ...base,
+      contentMarkdown: md,
+      internalLinkCandidates: 5,
+    });
     expect(find(withoutHost, 'internal-links').status).not.toBe('pass'); // mis-counted as external
 
     const withHost = scoreArticleSeo({
       ...base,
       contentMarkdown: md,
       internalLinkCandidates: 5,
-      siteUrl: 'https://wiselyrich.com',
+      siteUrl: 'https://example.com',
     });
     expect(find(withHost, 'internal-links').status).toBe('pass'); // now correctly internal
   });
