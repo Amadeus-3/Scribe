@@ -9,7 +9,6 @@ Scribe is a **personal** scheduled SEO-article pipeline with one mandatory human
 approval gate: keyword → brief → draft → automated SEO QA → **human approve** →
 publish to WordPress. Multiple blogs = multiple `Site` rows. Nothing publishes
 autonomously. Full always-loaded summary: [CLAUDE.md](../../../CLAUDE.md).
-Phase status + decisions: [PROGRESS.md](../../../PROGRESS.md).
 
 ## Prerequisites
 
@@ -200,7 +199,7 @@ a stage, update this section with the concrete command + file path.
   `Json` column without parsing it through its Zod schema first.
 - Conventional Commits. Tests alongside code; test-first for core + security.
 - Build phase by phase (Spec §16); a phase is done only when its acceptance
-  criteria pass + the quality gate is green + committed + PROGRESS.md updated.
+  criteria pass + the quality gate is green + committed.
 
 ## Writing voice — engaging, non-generic copy (feed the per-site StyleGuide)
 

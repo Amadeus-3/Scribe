@@ -1,7 +1,6 @@
 # CLAUDE.md — Scribe / Article Engine
 
-Condensed, always-loaded project guide. Full spec lives in the build
-specification; `PROGRESS.md` tracks phase status + the Decisions Log.
+Condensed, always-loaded project guide.
 
 ## What this is
 
@@ -93,7 +92,7 @@ admin/root credentials).
 - Never call the real AI provider or real CMS in tests — mock them.
 - Accessibility (WCAG 2.1 AA) and security are acceptance criteria, not afterthoughts.
 
-## Active decisions (see PROGRESS.md Decisions Log)
+## Active decisions
 
 - Keywords: **manual seed only** (v1); `KeywordSource` interface, no paid API yet.
 - CMS: **WordPress or Strapi**; default publish status **draft** in the target CMS.
@@ -105,6 +104,6 @@ admin/root credentials).
 ## Build protocol
 
 Build phase by phase (Spec §16). A phase is done only when its acceptance criteria
-pass + lint/typecheck/test green + committed + `PROGRESS.md` updated. Respect the
+pass + lint/typecheck/test green + committed. Respect the
 non-negotiables above; if a change would violate one, stop and flag it. Don't
 gold-plate — build exactly what each phase asks.

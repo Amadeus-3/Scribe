@@ -1,7 +1,6 @@
 # AGENTS.md — Scribe / Article Engine
 
-Condensed, always-loaded project guide. Full spec lives in the build
-specification; `PROGRESS.md` tracks phase status + the Decisions Log.
+Condensed, always-loaded project guide.
 
 ## What this is
 
@@ -37,10 +36,10 @@ docker-compose.yml   local Postgres + Inngest dev server
 | Task                        | Command                                                                                                        |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Install                     | `pnpm install`                                                                                                 |
-| Full stack in Docker        | `docker compose up -d --build` (Postgres :5434, Inngest :8289, web :4000, worker :4100; runs migrations first) |
-| Infra only                  | `docker compose up -d postgres inngest mailpit`                                                                |
+| Full stack in Docker        | `docker compose up -d --build` (Postgres :5432, Inngest :8288, web :3000, worker :3100; runs migrations first) |
+| Infra only                  | `docker compose up -d postgres inngest`                                                                        |
 | Migrate (dev)               | `pnpm db:migrate` · Generate client: `pnpm db:generate` · Deploy: `pnpm db:deploy`                             |
-| Dev (host, fast hot-reload) | `pnpm dev` (turbo; web :4000, worker :4100) — needs infra up                                                   |
+| Dev (host, fast hot-reload) | `pnpm dev` (turbo; web :3000, worker :3100) — needs infra up                                                   |
 | Lint / Types / Test / Build | `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build`                                                    |
 | E2E                         | `pnpm --filter @scribe/web e2e`                                                                                |
 
@@ -93,11 +92,11 @@ admin/root credentials).
 - Never call the real AI provider or real CMS in tests — mock them.
 - Accessibility (WCAG 2.1 AA) and security are acceptance criteria, not afterthoughts.
 
-## Active decisions (see PROGRESS.md Decisions Log)
+## Active decisions
 
 - Keywords: **manual seed only** (v1); `KeywordSource` interface, no paid API yet.
 - CMS: **WordPress or Strapi**; default publish status **draft** in the target CMS.
-- Auth: **email magic link + allowlist** (no open sign-up).
+- Auth: **email magic link + invitations** (Team page; first user → ADMIN; `ALLOWED_SIGNIN_EMAILS` optional bootstrap guard). No open sign-up.
 - Brief gate: **auto-approve** (manual path implemented but off).
 - Hosting: **self-hosted Docker Compose**.
 - Budget: **$50/mo**, **$2/article** ceiling (seeded into Settings, editable in UI).
@@ -105,6 +104,6 @@ admin/root credentials).
 ## Build protocol
 
 Build phase by phase (Spec §16). A phase is done only when its acceptance criteria
-pass + lint/typecheck/test green + committed + `PROGRESS.md` updated. Respect the
+pass + lint/typecheck/test green + committed. Respect the
 non-negotiables above; if a change would violate one, stop and flag it. Don't
 gold-plate — build exactly what each phase asks.
