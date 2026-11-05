@@ -1,3 +1,10 @@
+Optional repository **variable** (not secret) `VPS_DIR`: the directory the stack
+lives in on the VPS, default `/opt/scribe`. Set it when the box is shared and you
+want the files under your own home, e.g. `/home/you/scribe`. The directory must
+be writable by the deploy user (owner you, group `deploy`, mode `2770`) and the
+deploy user needs traverse rights on the parent: `setfacl -m u:deploy:x /home/you`.
+Every `/opt/scribe` below then means that directory.
+
 # Deploying Scribe to an Ubuntu VPS
 
 One box, Docker Compose, automatic HTTPS, redeploy on every green push to
