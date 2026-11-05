@@ -55,8 +55,7 @@ In practice:
 
 Conventional Commits: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`.
 Keep pull requests small and focused on one thing. Describe what changed, why,
-and how you verified it. Update `PROGRESS.md` when a change completes or
-changes a phase.
+and how you verified it.
 
 ## Reporting security issues
 

@@ -15,4 +15,3 @@
 - [ ] Every new mutation goes through `authorize()` and writes an audit row
 - [ ] Article state changes go through `transitionArticle`
 - [ ] New secret fields are added to `REDACT_PATHS`
-- [ ] `PROGRESS.md` updated if this completes or changes a phase

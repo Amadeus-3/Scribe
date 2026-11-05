@@ -73,8 +73,7 @@ too, or be set from Settings → Email. See [.env.example](.env.example).
 
 ## Status
 
-Working end to end for Strapi sites. Known gaps, tracked in
-[PROGRESS.md](PROGRESS.md):
+Working end to end for Strapi sites. Known gaps:
 
 - WordPress publisher not implemented.
 - Playwright end-to-end coverage of the review gate is pending.
