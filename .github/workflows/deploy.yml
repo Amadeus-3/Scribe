@@ -37,6 +37,10 @@ env:
   # The commit CI just validated (workflow_run), or the current ref (dispatch).
   RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
   IMAGE: ghcr.io/${{ github.repository }}
+  # Where the stack lives on the VPS. Override with a repository *variable*
+  # VPS_DIR (Settings → Secrets and variables → Actions → Variables), e.g. a
+  # home directory on a shared box. Must be writable by the deploy user.
+  STACK_DIR: ${{ vars.VPS_DIR || '/opt/scribe' }}
 
 jobs:
   preflight:
@@ -104,7 +108,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           source: 'docker-compose.prod.yml,deploy/Caddyfile'
-          target: /opt/scribe/.incoming
+          target: ${{ env.STACK_DIR }}/.incoming
           strip_components: 0
       - name: Pull image, migrate, restart
         uses: appleboy/ssh-action@v1.2.0
@@ -114,17 +118,18 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ needs.build.outputs.image }}
           IMAGE_TAG: ${{ needs.build.outputs.tag }}
+          STACK_DIR: ${{ env.STACK_DIR }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          envs: GHCR_USER,GHCR_TOKEN,IMAGE,IMAGE_TAG
+          envs: GHCR_USER,GHCR_TOKEN,IMAGE,IMAGE_TAG,STACK_DIR
           script_stop: true
           script: |
             set -euo pipefail
-            cd /opt/scribe
-            test -f .env || { echo "/opt/scribe/.env missing — see docs/deploy.md"; exit 1; }
+            cd "$STACK_DIR"
+            test -f .env || { echo "$STACK_DIR/.env missing — see docs/deploy.md"; exit 1; }
 
             # Promote the files scp dropped in .incoming/ (atomic-ish rename).
             mv -f .incoming/docker-compose.prod.yml docker-compose.yml
