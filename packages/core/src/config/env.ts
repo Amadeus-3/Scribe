@@ -42,11 +42,18 @@ export const EnvSchema = z.object({
   INNGEST_EVENT_KEY: z.string().min(1).optional(),
   INNGEST_SIGNING_KEY: z.string().min(1).optional(),
 
-  // Auth.js (NextAuth v5) — email magic link + allowlist (Decision §18.4).
+  // Auth.js (NextAuth v5) — email + password, JWT sessions.
   AUTH_SECRET: z.string().min(16, 'must be at least 16 characters'),
+  // Optional: when set, /setup demands it before creating the first admin.
+  // For operators who expose the server publicly before finishing setup.
+  SETUP_TOKEN: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(8, 'must be at least 8 characters').optional(),
+  ),
+  // Optional SMTP fallback for invitations, resets and the review digest; the
+  // dashboard (Settings > Email) takes precedence.
   EMAIL_SERVER: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).optional(),
-  ALLOWED_SIGNIN_EMAILS: z.string().default(''),
 
   // AES-256-GCM key for per-site CMS credentials (Spec §10.3). 32 bytes.
   ENCRYPTION_KEY: base64Bytes(32),
@@ -84,15 +91,6 @@ export function getEnv(): Env {
     cached = loadEnv();
   }
   return cached;
-}
-
-/** Comma-separated allowlist parsed into a normalized lowercase set. */
-export function getSigninAllowlist(env: Env = getEnv()): Set<string> {
-  return new Set(
-    env.ALLOWED_SIGNIN_EMAILS.split(',')
-      .map((entry) => entry.trim().toLowerCase())
-      .filter((entry) => entry.length > 0),
-  );
 }
 
 /** Test-only: reset the cached env so a fresh `getEnv()` re-parses. */

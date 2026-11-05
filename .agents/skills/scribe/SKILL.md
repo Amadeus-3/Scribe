@@ -264,9 +264,12 @@ actual themes/ruler, not horoscope wallpaper.
 - **`dotenv-cli`** tolerates a missing `.env`; CI relies on this and supplies env
   at the job level instead of a file.
 - **Auth.js**: self-hosted needs `AUTH_TRUST_HOST=true` (also `trustHost: true` in
-  `auth.config.ts`) or it throws `UntrustedHost`. Sign-in is allowlisted via
-  `ALLOWED_SIGNIN_EMAILS` (checked at link-request time); local magic links land
-  in Mailpit (http://localhost:8026). The first user to sign in becomes ADMIN.
+  `auth.config.ts`) or it throws `UntrustedHost`. Sign-in is email + password
+  (Credentials provider, JWT sessions); the password logic lives in
+  `packages/core/src/services/auth-service.ts`. An empty database redirects to
+  `/setup` to create the admin; invitations and password resets are single-use
+  codes (`AuthToken`), emailed when SMTP exists and always shown on the Team page.
+  Operator recovery: `pnpm --filter @scribe/core auth:reset-link <email>`.
 - **Integration tests** (`pnpm --filter @scribe/core test:integration`) auto-create
   - migrate a `<db>_test` database; needs Postgres up and DATABASE_URL set.
 - **CI** mirrors the quality gate exactly: install (frozen lockfile) → db:generate

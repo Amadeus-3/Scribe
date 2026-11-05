@@ -5,7 +5,8 @@ import { recordAudit } from '../audit/audit-log';
 import { decryptSecret, encryptSecret } from '../crypto/encryption';
 
 /**
- * Outbound email (magic links + review digest) configured from the dashboard.
+ * Outbound email (invitations, password resets, review digest) configured from
+ * the dashboard.
  *
  * The SMTP URL carries a password, so it is stored like every other provider
  * secret: AES-256-GCM in `ProviderCredential` (provider "smtp"), written only
@@ -13,9 +14,9 @@ import { decryptSecret, encryptSecret } from '../crypto/encryption';
  * `EMAIL_SERVER` / `EMAIL_FROM` in the environment remain a fallback so
  * existing deployments and local dev (Mailpit) keep working unchanged.
  *
- * Why this matters for a fresh install: without SMTP nobody can receive the
- * first magic link. `resolveEmailConfig` is what Auth.js consults at request
- * time, so SMTP saved in Settings takes effect without a restart.
+ * Nothing in sign-in depends on it: invite and reset links are also shown in
+ * the dashboard to pass on by hand. `resolveEmailConfig` runs at request time,
+ * so SMTP saved in Settings takes effect without a restart.
  */
 export const EMAIL_PROVIDER = 'smtp';
 

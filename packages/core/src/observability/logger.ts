@@ -10,6 +10,12 @@ import pino, { type DestinationStream, type Logger, type LoggerOptions } from 'p
 export const REDACT_PATHS: string[] = [
   'password',
   '*.password',
+  'passwordHash',
+  '*.passwordHash',
+  'currentPassword',
+  '*.currentPassword',
+  'newPassword',
+  '*.newPassword',
   'token',
   '*.token',
   'accessToken',
@@ -36,6 +42,7 @@ export const REDACT_PATHS: string[] = [
   'INNGEST_SIGNING_KEY',
   'INNGEST_EVENT_KEY',
   'EMAIL_SERVER',
+  'SETUP_TOKEN',
   // Dashboard SMTP config (the URL carries the password)
   'serverUrl',
   '*.serverUrl',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, type ReactNode } from 'react';
-import type { FormState } from '@/server/actions';
+import type { FormState } from '@/server/form-state';
 import { buttonClass } from '@/components/ui';
 
 const initial: FormState = { ok: false };
@@ -49,6 +49,11 @@ export function ActionForm({
           </span>
         ) : null}
       </div>
+      {state.ok && state.detail ? (
+        <code className="mt-2 block select-all break-all rounded-md border border-border bg-panel-2 px-2.5 py-1.5 text-xs text-fg">
+          {state.detail}
+        </code>
+      ) : null}
     </form>
   );
 }

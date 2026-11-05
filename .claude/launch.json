@@ -18,6 +18,26 @@
         "dev"
       ],
       "port": 4000
+    },
+    {
+      "name": "web-fresh",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@scribe/core",
+        "exec",
+        "dotenv",
+        "-e",
+        "../../.env.fresh",
+        "-e",
+        "../../.env",
+        "--",
+        "pnpm",
+        "--filter",
+        "@scribe/web",
+        "dev"
+      ],
+      "port": 4000
     }
   ]
 }

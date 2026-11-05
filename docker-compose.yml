@@ -105,7 +105,7 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # Local mail catcher for magic-link sign-in. Host SMTP :2025 -> container 1025,
+  # Local mail catcher for invitations, resets and the digest. Host SMTP :2025 -> container 1025,
   # host web UI :8026 -> container 8025.
   mailpit:
     image: axllent/mailpit:latest

@@ -7,7 +7,7 @@ import { resolveEmailConfig, type EmailConfig } from './email-config';
  * SMTP delivery for operational notifications and sign-in links.
  *
  * Config comes from `resolveEmailConfig` (dashboard first, env second), so the
- * digest and the magic link share one setting. `serverUrl` is in the logger's
+ * digest, invitations and reset links share one setting. `serverUrl` is in the logger's
  * REDACT_PATHS and nothing here logs it.
  *
  * This lives in packages/core (not apps/web) because the digest is sent by the

@@ -88,90 +88,85 @@ enum ReviewDecision {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  email         String     @unique
+  id            String      @id @default(cuid())
+  email         String      @unique
   name          String?
-  role          Role       @default(VIEWER)
-  status        UserStatus @default(ACTIVE)
+  role          Role        @default(VIEWER)
+  status        UserStatus  @default(ACTIVE)
   // Who invited this user (a User.id). Plain string, not a relation, so an
   // inviter can never be blocked from deletion by their invitees.
   invitedById   String?
   invitedAt     DateTime?
   lastLoginAt   DateTime?
-  // Auth.js fields
+  // scrypt hash (see auth/password.ts). Null until the person sets one: an
+  // INVITED row has none, and a bootstrap admin gets one on /setup.
+  passwordHash  String?
   emailVerified DateTime?
   image         String?
-  accounts      Account[]
-  sessions      Session[]
-  createdAt     DateTime   @default(now())
+  authTokens    AuthToken[]
+  createdAt     DateTime    @default(now())
   reviews       Review[]
   auditLogs     AuditLog[]
 }
 
+/// Why a token is being handed out. INVITE lets an invitee set their first
+/// password and activates the account; PASSWORD_RESET sets a new one for an
+/// existing account (admin-issued from the Team page, self-service via email,
+/// or the operator's recovery command).
+enum AuthTokenPurpose {
+  INVITE
+  PASSWORD_RESET
+}
+
+/// Single-use, expiring secrets for the password-less steps of auth. Only the
+/// SHA-256 of the secret is stored, so a database read never yields a usable
+/// link.
+model AuthToken {
+  id          String           @id @default(cuid())
+  tokenHash   String           @unique
+  purpose     AuthTokenPurpose
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Admin who issued it; null for self-service and operator-issued tokens.
+  createdById String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([userId, purpose])
+}
+
 // ── Auth.js (NextAuth v5) adapter models ─────────────────────────────────────
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
 
 model Site {
-  id                String      @id @default(cuid())
-  name              String
-  baseUrl           String
+  id                       String      @id @default(cuid())
+  name                     String
+  baseUrl                  String
   // Public URL path prefix for published posts, e.g. "/blog" → links resolve to
   // {baseUrl}/blog/{slug}. Null/empty = posts live at the site root ({baseUrl}/{slug}).
   // Used to build correct internal links to existing posts.
-  articlePathPrefix String?
-  cmsType           CmsType     @default(WORDPRESS)
+  articlePathPrefix        String?
+  cmsType                  CmsType     @default(WORDPRESS)
   // Encrypted at rest (Spec §10.3). Stores ciphertext + iv + tag, never plaintext.
-  cmsCredentialsEnc String?
-  defaultAuthor     String? // CMS author/username to attribute posts to
-  status            SiteStatus  @default(ACTIVE)
-  briefAutoApprove  Boolean     @default(true)
+  cmsCredentialsEnc        String?
+  defaultAuthor            String? // CMS author/username to attribute posts to
+  status                   SiteStatus  @default(ACTIVE)
+  briefAutoApprove         Boolean     @default(true)
   // Google Search Console property id, e.g. "sc-domain:example.com" (non-secret).
-  gscPropertyUrl    String?
+  gscPropertyUrl           String?
   // Opt this site into the optional weekly trending-topic discovery cron.
-  discoveryEnabled  Boolean     @default(false)
+  discoveryEnabled         Boolean     @default(false)
   // Opt this site into the autopilot (discover -> draft -> enrich -> await
   // review). Requires a StyleGuide; the tick skips sites without one rather
   // than claiming a keyword it cannot draft.
-  autopilotEnabled  Boolean     @default(false)
+  autopilotEnabled         Boolean     @default(false)
   // Per-site override for the global autopilot_articles_per_week setting.
   // Null inherits the global value.
   autopilotArticlesPerWeek Int?
-  styleGuide        StyleGuide?
-  keywords          Keyword[]
-  articles          Article[]
-  createdAt         DateTime    @default(now())
+  styleGuide               StyleGuide?
+  keywords                 Keyword[]
+  articles                 Article[]
+  createdAt                DateTime    @default(now())
 }
 
 model StyleGuide {
@@ -196,26 +191,26 @@ model StyleGuide {
 }
 
 model Keyword {
-  id           String        @id @default(cuid())
-  siteId       String
-  site         Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  term         String
-  intent       SearchIntent?
-  searchVolume Int?
-  difficulty   Int?
-  priority     Int           @default(0)
-  status       KeywordStatus @default(QUEUED)
+  id             String        @id @default(cuid())
+  siteId         String
+  site           Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  term           String
+  intent         SearchIntent?
+  searchVolume   Int?
+  difficulty     Int?
+  priority       Int           @default(0)
+  status         KeywordStatus @default(QUEUED)
   // Provenance of how this keyword entered the queue (KeywordSourceId).
   source         String? // e.g. "manual_seed" | "google_search_console" | "google_trends" | "llm_web"
   discoveryScore Float? // 0..1 blended ranking score (distinct from human-set `priority`)
   sourceMetadata Json? // per-source rationale ("why queued"), validated before write
-  sourcedAt    DateTime      @default(now())
+  sourcedAt      DateTime      @default(now())
   // Set when the autopilot atomically claims this keyword (status IN_PROGRESS),
   // cleared on release. Without it a claim orphaned by a worker crash could
   // never be detected as stale, since Keyword has no updatedAt.
-  claimedAt    DateTime?
-  brief        Brief?
-  article      Article?
+  claimedAt      DateTime?
+  brief          Brief?
+  article        Article?
 
   @@unique([siteId, term])
   @@index([siteId, status])
@@ -239,47 +234,47 @@ model Brief {
 }
 
 model Article {
-  id              String            @id @default(cuid())
-  siteId          String
-  site            Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  keywordId       String            @unique
-  keyword         Keyword           @relation(fields: [keywordId], references: [id], onDelete: Cascade)
-  briefId         String?           @unique
-  brief           Brief?            @relation(fields: [briefId], references: [id])
-  title           String?
-  slug            String?
-  metaDescription String?
+  id               String            @id @default(cuid())
+  siteId           String
+  site             Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  keywordId        String            @unique
+  keyword          Keyword           @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  briefId          String?           @unique
+  brief            Brief?            @relation(fields: [briefId], references: [id])
+  title            String?
+  slug             String?
+  metaDescription  String?
   // Reviewer-chosen CMS taxonomy (by slug); resolved to CMS documentIds at publish.
-  categorySlug    String?
-  tagSlugs        String[] @default([])
+  categorySlug     String?
+  tagSlugs         String[]          @default([])
   // Hero image: prompt + the single uploaded/generated hero asset.
-  imagePrompt     String?
-  imageMimeType   String?
-  imageDataBase64 String?
+  imagePrompt      String?
+  imageMimeType    String?
+  imageDataBase64  String?
   // In-body (supporting) images, each with its own prompt + optional uploaded asset.
-  images          ArticleImage[]
-  contentMarkdown String? // canonical content
-  contentHtml     String? // sanitized render/publish form
-  status          ArticleStatus     @default(QUEUED)
-  wordCount       Int?
-  qaReport        Json? // SeoReport (seo/seo-report.ts): { version, score, verdict, checks[], flags[], wordCount, generatedAt }
-  llmModel        String?
-  costUsd         Decimal           @default(0) @db.Decimal(10, 4)
-  regenAttempts   Int               @default(0)
-  currentVersion  Int               @default(0)
+  images           ArticleImage[]
+  contentMarkdown  String? // canonical content
+  contentHtml      String? // sanitized render/publish form
+  status           ArticleStatus     @default(QUEUED)
+  wordCount        Int?
+  qaReport         Json? // SeoReport (seo/seo-report.ts): { version, score, verdict, checks[], flags[], wordCount, generatedAt }
+  llmModel         String?
+  costUsd          Decimal           @default(0) @db.Decimal(10, 4)
+  regenAttempts    Int               @default(0)
+  currentVersion   Int               @default(0)
   // True when the autopilot drafted this article rather than a human. Used for
   // reporting and digest scoping only — pacing counts ALL articles, because the
   // weekly target is a cost budget for the site, not an automation quota.
-  autoGenerated   Boolean           @default(false)
+  autoGenerated    Boolean           @default(false)
   // When the reviewer was last told this article is waiting. Null = not yet
   // notified, which is what the review digest queries on.
   reviewNotifiedAt DateTime?
-  revisions       ArticleRevision[]
-  reviews         Review[]
-  publishRecords  PublishRecord[]
-  usageRecords    UsageRecord[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  revisions        ArticleRevision[]
+  reviews          Review[]
+  publishRecords   PublishRecord[]
+  usageRecords     UsageRecord[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([status])
   @@index([siteId, status])

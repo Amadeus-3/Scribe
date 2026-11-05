@@ -14,7 +14,8 @@ export * from './crypto/encryption';
 export * from './auth/authorize';
 export * from './auth/system-actor';
 export * from './auth/human-actor';
-export * from './auth/sign-in-policy';
+export * from './auth/password';
+export * from './auth/auth-token';
 
 // Observability
 export * from './observability/logger';
@@ -36,6 +37,7 @@ export * from './notify/review-digest';
 export * from './notify/mailer';
 export * from './notify/email-config';
 export * from './notify/test-email';
+export * from './notify/auth-emails';
 
 // AI providers
 export * from './ai/openrouter';
@@ -77,6 +79,7 @@ export * from './services/settings-service';
 export * from './services/provider-credential-service';
 export * from './services/keyword-discovery-service';
 export * from './services/user-service';
+export * from './services/auth-service';
 
 // Database access + generated Prisma types and enums
 export type { Db } from './db/types';
