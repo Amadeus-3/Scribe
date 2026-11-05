@@ -1,8 +1,11 @@
-import { AuthError } from 'next-auth';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { signIn } from '@/auth';
-import { loginErrorKey, loginErrorText } from '@/lib/login-error';
-import { countUsers, prisma } from '@scribe/core';
+import { prisma, needsSetup } from '@scribe/core';
+import { AuthShell } from '@/components/auth-shell';
+import { ActionForm } from '@/components/action-form';
+import { Field, inputClass } from '@/components/ui';
+import { loginAction } from '@/server/auth-actions';
+import { safeRedirectPath } from '@/lib/app-url';
 
 export const metadata = { title: 'Sign in — Scribe' };
 
@@ -14,95 +17,60 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // A fresh instance explains itself: the first email in becomes the admin.
-  const isFreshInstance = (await countUsers(prisma)) === 0;
+  // An empty instance has nobody to sign in; it needs its first admin.
+  if (await needsSetup(prisma)) redirect('/setup');
   const params = await searchParams;
-  const errorKey = typeof params.error === 'string' ? params.error : undefined;
-  const errorText = loginErrorText(errorKey, { isFreshInstance });
-
-  async function sendMagicLink(formData: FormData) {
-    'use server';
-    const email = String(formData.get('email') ?? '').trim();
-    if (!email) return;
-    try {
-      await signIn('nodemailer', { email, redirectTo: '/' });
-    } catch (error) {
-      // A refused or failed sign-in arrives as an AuthError; show it on this
-      // page. Anything else, including Next's own redirect signal on success,
-      // must propagate.
-      if (error instanceof AuthError) redirect(`/login?error=${loginErrorKey(error.type)}`);
-      throw error;
-    }
-  }
+  const callbackUrl = safeRedirectPath(params.callbackUrl);
+  // Auth.js lands here with ?error= when a session is rejected mid-flight.
+  const authError = typeof params.error === 'string';
 
   return (
-    <main
-      style={{
-        minHeight: '100dvh',
-        display: 'grid',
-        placeItems: 'center',
-        fontFamily: 'system-ui, sans-serif',
-        background: '#0b0b0c',
-        color: '#e7e7ea',
-      }}
+    <AuthShell
+      title="Sign in"
+      description="Access is by invitation. Ask an admin if you need an account."
+      footer={
+        <>
+          <Link href="/forgot" className="text-accent hover:underline">
+            Forgot your password?
+          </Link>
+          <span className="mx-2">·</span>
+          <Link href="/join" className="text-accent hover:underline">
+            Have an invite code?
+          </Link>
+        </>
+      }
     >
-      <form
-        action={sendMagicLink}
-        style={{ width: 360, maxWidth: '90vw', display: 'grid', gap: 12 }}
-      >
-        <h1 style={{ fontSize: '1.25rem', margin: 0 }}>
-          {isFreshInstance ? 'Create the first admin account' : 'Scribe'}
-        </h1>
-        <p style={{ color: '#9a9aa2', margin: 0, fontSize: '0.9rem' }}>
-          {isFreshInstance
-            ? 'This instance has no accounts yet. The first email to sign in becomes the administrator and can invite the rest of the team.'
-            : 'Sign in with a magic link. Access is by invitation; ask an admin if you need an account.'}
-        </p>
-        {errorText ? (
-          <p
-            role="alert"
-            style={{
-              margin: 0,
-              padding: '0.6rem 0.7rem',
-              borderRadius: 6,
-              border: '1px solid #7f1d1d',
-              background: '#2a1215',
-              color: '#fca5a5',
-              fontSize: '0.85rem',
-            }}
-          >
-            {errorText}
-          </p>
-        ) : null}
-        <input
-          name="email"
-          type="email"
-          required
-          placeholder="you@example.com"
-          aria-label="Email address"
-          style={{
-            padding: '0.6rem 0.7rem',
-            borderRadius: 6,
-            border: '1px solid #2a2a2e',
-            background: '#141417',
-            color: 'inherit',
-          }}
-        />
-        <button
-          type="submit"
-          style={{
-            padding: '0.6rem 0.7rem',
-            borderRadius: 6,
-            border: 0,
-            background: '#4f46e5',
-            color: '#fff',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
+      {authError ? (
+        <p
+          role="alert"
+          className="mb-3 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs text-danger"
         >
-          Send magic link
-        </button>
-      </form>
-    </main>
+          Your session ended. Sign in again.
+        </p>
+      ) : null}
+      <ActionForm action={loginAction} submitLabel="Sign in">
+        <input type="hidden" name="callbackUrl" value={callbackUrl} />
+        <Field label="Email" name="email">
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoComplete="email"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Password" name="password">
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            className={inputClass}
+          />
+        </Field>
+      </ActionForm>
+    </AuthShell>
   );
 }

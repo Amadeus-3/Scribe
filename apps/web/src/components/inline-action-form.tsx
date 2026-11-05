@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, type ReactNode } from 'react';
-import type { FormState } from '@/server/actions';
+import type { FormState } from '@/server/form-state';
 import { buttonClass } from '@/components/ui';
 
 const initial: FormState = { ok: false };
@@ -36,6 +36,11 @@ export function InlineActionForm({
       </div>
       {state.error ? <span className="text-xs text-danger">{state.error}</span> : null}
       {state.ok && state.message ? <span className="text-xs text-ok">{state.message}</span> : null}
+      {state.ok && state.detail ? (
+        <code className="block max-w-md select-all break-all rounded-md border border-border bg-panel-2 px-2 py-1 text-xs text-fg">
+          {state.detail}
+        </code>
+      ) : null}
     </form>
   );
 }

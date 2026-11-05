@@ -15,7 +15,7 @@ autonomously.
 - `apps/web` — Next.js (App Router) dashboard + server actions/API. Only thing humans touch.
 - `apps/worker` — Inngest functions (sourcing/briefing/drafting/QA/publish). Durable, retryable, idempotent.
 - `packages/core` — Prisma client + schema, Zod schemas, domain types, state machine, LLM + CMS clients, pure pipeline logic. **No framework/UI imports.**
-- Postgres + Prisma · Inngest · OpenRouter text generation · Gemini image generation · Auth.js (email magic link) · Zod · pino · Sentry · Vitest + Playwright.
+- Postgres + Prisma · Inngest · OpenRouter text generation · Gemini image generation · Auth.js (email + password, JWT sessions) · Zod · pino · Sentry · Vitest + Playwright.
 
 ## Layout
 
@@ -96,7 +96,7 @@ admin/root credentials).
 
 - Keywords: **manual seed only** (v1); `KeywordSource` interface, no paid API yet.
 - CMS: **WordPress or Strapi**; default publish status **draft** in the target CMS.
-- Auth: **email magic link + invitations** (Team page; first user → ADMIN; `ALLOWED_SIGNIN_EMAILS` optional bootstrap guard). No open sign-up.
+- Auth: **email + password** (Auth.js Credentials, JWT). Empty instance → `/setup` creates the ADMIN (optional `SETUP_TOKEN` guard). Invitations and resets are single-use codes shown on the Team page and emailed when SMTP exists. No open sign-up.
 - Brief gate: **auto-approve** (manual path implemented but off).
 - Hosting: **self-hosted Docker Compose**.
 - Budget: **$50/mo**, **$2/article** ceiling (seeded into Settings, editable in UI).

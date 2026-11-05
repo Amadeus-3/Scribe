@@ -23,9 +23,9 @@ The VPS never builds anything. CI builds the image on GitHub, the VPS pulls it.
 
 - Ubuntu 22.04 or 24.04, **2 GB RAM minimum** (4 GB comfortable), 20 GB disk.
 - A domain (or subdomain) you control, e.g. `scribe.example.com`.
-- An SMTP provider for sign-in emails, invitations and the review digest. It
-  can be configured later from the dashboard; see step 7.
-  (Resend, Postmark, Mailgun, SES, your mail host). Port 587 with STARTTLS.
+- Optional: an SMTP provider (Resend, Postmark, Mailgun, SES, your mail host)
+  so invitations, password resets and the review digest can be emailed. Set it
+  from the dashboard whenever you like; nothing in setup depends on it.
 - OpenRouter and Gemini API keys.
 
 ## 1. DNS
@@ -194,19 +194,18 @@ Merge or push to `main`. CI runs; when it passes, **Deploy** runs:
 
 Or trigger it by hand: Actions → Deploy → Run workflow.
 
-Then open `https://your-domain`, enter your email, click the link. The first
-account becomes ADMIN (if you set `ALLOWED_SIGNIN_EMAILS`, it must be one of
-those). Invite the rest of the team from the Team page; nobody else can get in.
+Then open `https://your-domain`. An instance with no accounts shows `/setup`:
+enter your name, email and a password, and you are signed in as the
+administrator. Do this right after the first deploy; until an administrator
+exists, whoever reaches the page first can claim it. If the server is public
+before you can get to it, set `SETUP_TOKEN` in `.env` (any string of 8+
+characters) and the page will ask for it.
 
-**No SMTP yet?** On an instance with zero users the sign-in link is written to
-the web log instead of being emailed:
-
-```bash
-docker compose logs web | grep signInUrl
-```
-
-Open that link, then set SMTP under Settings → Email and press "Send test email
-to me". This log path closes as soon as the first account exists.
+From there: Settings → Email (optional, with "Send test email to me"), the
+OpenRouter and Gemini keys, a site, and invitations from the Team page. Every
+invitation is a link; Scribe emails it when SMTP is configured and always shows
+it to you to pass on by hand. The invitee opens it, chooses a password, and is
+in. Nobody can sign up on their own.
 
 ## 8. Verify the pipeline is alive
 
@@ -284,10 +283,19 @@ sudo apt-get update && sudo apt-get upgrade -y && docker compose pull && docker 
   `.env` must match the host you browse to.
 - **Caddy (profile B): certificate errors / site unreachable.** DNS must resolve
   to the VPS and ports 80 + 443 must be free and open. `docker compose logs caddy`.
-- **Sign-in email never arrives.** `docker compose logs web | grep -i email`.
+- **Locked out (forgot the password, no email configured).** Any admin can
+  issue a reset link from the Team page. If no admin can sign in, run on the
+  server, as `deploy` in the stack directory:
+
+  ```bash
+  docker compose exec web pnpm --filter @scribe/core auth:reset-link you@example.com
+  ```
+
+  It prints a one-hour, single-use link to `/reset`.
+
+- **Invitation or reset email never arrives.** `docker compose logs web | grep -i email`.
   Check Settings → Email (or `EMAIL_SERVER`) and that the provider allows the From
-  domain. On a staffed instance the address must have been invited from the
-  Team page (or be in `ALLOWED_SIGNIN_EMAILS`).
+  domain. Meanwhile the link itself is shown on the Team page; send it another way.
 - **Deploy job fails with `.env missing`.** Step 4 was skipped.
 - **Deploy job skipped entirely.** `VPS_HOST` secret is unset; the image was
   still pushed.

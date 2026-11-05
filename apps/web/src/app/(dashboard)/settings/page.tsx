@@ -20,6 +20,7 @@ import {
   clearEmailConfigAction,
   sendTestEmailAction,
   syncOpenRouterModelsAction,
+  changePasswordAction,
 } from '@/server/actions';
 
 const GEMINI_IMAGE_MODELS = [
@@ -28,7 +29,12 @@ const GEMINI_IMAGE_MODELS = [
   { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash Image' },
 ];
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const justSetUp = (await searchParams).welcome === '1';
   const actor = await requireActor();
   const settings = await getSettingsForActor(prisma, actor);
   const openRouterCredential = await getOpenRouterCredentialSummary(prisma, actor);
@@ -106,6 +112,17 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" description="Budgets, batch sizes, and model selection." />
+      {justSetUp ? (
+        <div
+          role="status"
+          className="mb-6 rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 text-sm leading-6 text-fg"
+        >
+          <span className="font-medium">Your administrator account is ready.</span> Two things make
+          the rest work: email delivery below (so invitations and reset links can be emailed; until
+          then, copy them from the Team page) and the OpenRouter and Gemini keys (so the pipeline
+          can draft). Then add a site and invite your team.
+        </div>
+      ) : null}
       {!canEdit ? <p className="mb-3 text-sm text-muted">Read-only — Admin can edit.</p> : null}
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <Card title="Budget & pipeline">
@@ -293,8 +310,47 @@ export default async function SettingsPage() {
 
         <div className="grid content-start gap-4">
           <Card
+            title="Your password"
+            description="Changing it signs nobody out, and cancels any reset link issued for you."
+          >
+            <ActionForm action={changePasswordAction} submitLabel="Change password">
+              <Field label="Current password" name="currentPassword">
+                <input
+                  id="currentPassword"
+                  name="currentPassword"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="New password" name="newPassword" hint="At least 10 characters.">
+                <input
+                  id="newPassword"
+                  name="newPassword"
+                  type="password"
+                  required
+                  minLength={10}
+                  autoComplete="new-password"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Confirm new password" name="confirmPassword">
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  className={inputClass}
+                />
+              </Field>
+            </ActionForm>
+          </Card>
+
+          <Card
             title="Email delivery"
-            description="SMTP used for sign-in links, invitations and the review digest. The URL is stored encrypted; the environment EMAIL_SERVER/EMAIL_FROM remain a fallback."
+            description="SMTP used to email invitations, password reset links and the review digest. Optional: invite and reset links can always be copied from the Team page. The URL is stored encrypted; the environment EMAIL_SERVER/EMAIL_FROM remain a fallback."
           >
             <div className="grid gap-2 text-sm">
               <div className="flex items-center justify-between gap-2">

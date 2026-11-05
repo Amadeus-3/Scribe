@@ -6,11 +6,11 @@ import {
   deleteInvitation,
   inviteUser,
   listTeam,
-  recordSignIn,
   setUserStatus,
   updateUserRole,
 } from './user-service';
 import { resolveDigestRecipients } from './pipeline-service';
+import { redeemAuthCode } from './auth-service';
 
 const db = getTestPrisma();
 
@@ -50,6 +50,13 @@ describe('inviteUser', () => {
       entityId: invited.id,
       metadata: { role: 'EDITOR' },
     });
+
+    // The invite code comes back once; the database only holds its hash.
+    expect(invited.code).toHaveLength(43);
+    const token = await db.authToken.findFirstOrThrow({ where: { userId: invited.id } });
+    expect(token.purpose).toBe('INVITE');
+    expect(token.tokenHash).not.toContain(invited.code);
+    expect(token.createdById).toBe(admin.id);
   });
 
   it('rejects malformed email and duplicate accounts', async () => {
@@ -67,20 +74,6 @@ describe('inviteUser', () => {
     expect(team.find((m) => m.id === invited.id)?.invitedByEmail).toBe('admin@test.local');
     expect(team.find((m) => m.id === admin.id)?.invitedByEmail).toBeNull();
     await expect(listTeam(db, editor)).rejects.toThrow(AuthorizationError);
-  });
-});
-
-describe('recordSignIn', () => {
-  it('activates an invitation, stamps lastLoginAt and emailVerified, audits once', async () => {
-    const invited = await inviteUser(db, admin, { email: 'new@test.local', role: 'VIEWER' });
-    await recordSignIn(db, invited.id);
-    const row = await db.user.findUniqueOrThrow({ where: { id: invited.id } });
-    expect(row.status).toBe('ACTIVE');
-    expect(row.lastLoginAt).toBeInstanceOf(Date);
-    expect(row.emailVerified).toBeInstanceOf(Date);
-
-    await recordSignIn(db, invited.id);
-    expect(await db.auditLog.count({ where: { action: 'user.invitationAccepted' } })).toBe(1);
   });
 });
 
@@ -104,7 +97,7 @@ describe('roles and status', () => {
     await expect(updateUserRole(db, admin, admin.id, 'EDITOR')).rejects.toThrow(
       /last active admin/,
     );
-    await recordSignIn(db, invitedAdmin.id);
+    await redeemAuthCode(db, 'INVITE', { code: invitedAdmin.code, password: 'a fine password' });
     await updateUserRole(db, admin, admin.id, 'EDITOR');
     expect((await db.user.findUniqueOrThrow({ where: { id: admin.id } })).role).toBe('EDITOR');
   });

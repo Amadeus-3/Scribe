@@ -3,14 +3,16 @@ import { z } from 'zod';
 import { authorize, type Actor } from '../auth/authorize';
 import { recordAudit } from '../audit/audit-log';
 import type { Db } from '../db/types';
+import { createAuthToken, type IssuedCode } from './auth-service';
 
 /**
  * Team management (Spec §10.2, §1.4): who can sign in and with which role.
  *
- * An invitation is a pre-created User row with status INVITED. The Auth.js
- * Prisma adapter finds it by email on the invitee's first magic-link sign-in,
- * so the magic link itself is the invitation and no token table is needed.
- * `recordSignIn` flips INVITED to ACTIVE.
+ * An invitation is a pre-created User row with status INVITED plus a
+ * single-use invite code (auth-service). The invitee redeems the code on
+ * /join, sets a password and the row becomes ACTIVE. Delivery of the code is
+ * the admin's choice: Scribe emails it when SMTP is configured and always
+ * shows it on the Team page to hand over by other means.
  *
  * Every mutation is gated by `authorize(actor, 'user.manage')` and writes its
  * AuditLog row in the same transaction (Spec §10.1.4, §10.1.6).
@@ -66,14 +68,14 @@ export async function listTeam(db: PrismaClient, actor: Actor): Promise<TeamMemb
 }
 
 /**
- * Pre-create the row the invitee's first sign-in will claim.
- * Returns the row so the caller can send the magic link.
+ * Pre-create the row and the invite code the invitee will redeem on /join.
+ * The code is returned once; only its hash is stored.
  */
 export async function inviteUser(
   db: PrismaClient,
   actor: Actor,
   input: unknown,
-): Promise<{ id: string; email: string; role: Role }> {
+): Promise<{ id: string; email: string; role: Role } & IssuedCode> {
   authorize(actor, 'user.manage');
   const { email, role } = InviteUserSchema.parse(input);
 
@@ -105,7 +107,12 @@ export async function inviteUser(
       entityId: user.id,
       metadata: { role },
     });
-    return user;
+    const issued = await createAuthToken(tx, {
+      userId: user.id,
+      purpose: 'INVITE',
+      createdById: actor.id,
+    });
+    return { ...user, ...issued };
   });
 }
 
@@ -208,7 +215,7 @@ export async function deleteInvitation(
   });
 }
 
-// ── Called by Auth.js, not by an admin ─────────────────────────────────────────
+// ── Called by the web app's session layer, not by an admin ─────────────────────
 
 /** Live access facts for the JWT refresh; null when the row is gone. */
 export async function getUserAccess(
@@ -216,43 +223,6 @@ export async function getUserAccess(
   userId: string,
 ): Promise<{ role: Role; status: UserStatus } | null> {
   return db.user.findUnique({ where: { id: userId }, select: { role: true, status: true } });
-}
-
-/**
- * The invitee's own sign-in activates the invitation. No `authorize()`: the
- * actor is the user acting on their own row, and Auth.js has just verified
- * the email. Audited as a human action so the Team page can show it.
- */
-export async function recordSignIn(
-  db: PrismaClient,
-  userId: string,
-  now = new Date(),
-): Promise<void> {
-  await db.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { status: true, emailVerified: true },
-    });
-    if (!user) return;
-    const activating = user.status === 'INVITED';
-    await tx.user.update({
-      where: { id: userId },
-      data: {
-        lastLoginAt: now,
-        ...(activating ? { status: 'ACTIVE' } : {}),
-        ...(user.emailVerified ? {} : { emailVerified: now }),
-      },
-    });
-    if (activating) {
-      await recordAudit(tx, {
-        actorId: userId,
-        actorType: 'human',
-        action: 'user.invitationAccepted',
-        entityType: 'User',
-        entityId: userId,
-      });
-    }
-  });
 }
 
 export async function countUsers(db: PrismaClient): Promise<number> {

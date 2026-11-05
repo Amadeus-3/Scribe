@@ -23,8 +23,12 @@ import {
   parseKeywordSeedList,
   parseBannedPhrases,
   parseTopicLines,
-  AuthorizationError,
-  UserManagementError,
+  issueInviteCode,
+  issuePasswordResetCode,
+  changeOwnPassword,
+  inviteEmail,
+  resolveEmailConfig,
+  sendEmailWith,
   EmailConfigError,
   EmailSendError,
   setEmailConfig,
@@ -38,7 +42,6 @@ import {
   OpenRouterError,
   StyleGuideSuggestionError,
   ArticleDraftError,
-  BudgetExceededError,
   assertWithinBudget,
   recordUsage,
   computeTextCostUsd,
@@ -73,46 +76,11 @@ import {
 } from '@scribe/core';
 import { emitArticleApproved, emitTickRequested } from './publish-events';
 import { requireActor } from '@/lib/session';
-import { signIn } from '@/auth';
+import { absoluteUrl, appHost } from '@/lib/app-url';
+import { toState, str, type FormState } from './form-state';
 
-export type FormState = { ok: boolean; error?: string; message?: string };
+export type { FormState };
 
-function toState(action: string, e: unknown): FormState {
-  if (e instanceof AuthorizationError) {
-    logger.warn({ action, errorType: 'AuthorizationError' }, 'server action denied');
-    return { ok: false, error: 'You are not permitted to perform this action.' };
-  }
-  if (e instanceof UserManagementError || e instanceof EmailConfigError) {
-    return { ok: false, error: e.message };
-  }
-  if (e instanceof EmailSendError) {
-    logger.warn({ action, errorType: e.name }, 'email send rejected');
-    return { ok: false, error: e.message };
-  }
-  if (e instanceof BudgetExceededError) {
-    logger.warn({ action, scope: e.scope, spentUsd: e.spentUsd }, 'AI budget reached');
-    return { ok: false, error: e.message };
-  }
-  if (e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError') {
-    const issues = (e as { issues?: Array<{ message: string }> }).issues ?? [];
-    logger.warn(
-      { action, errorType: 'ZodError', issues: issues.map((i) => i.message) },
-      'server action validation failed',
-    );
-    return { ok: false, error: issues.map((i) => i.message).join('; ') || 'Invalid input.' };
-  }
-  logger.error(
-    {
-      action,
-      errorType: e instanceof Error ? e.name : typeof e,
-      errorMessage: e instanceof Error ? e.message : 'Unknown server action failure',
-    },
-    'server action failed',
-  );
-  return { ok: false, error: 'Something went wrong. Please try again.' };
-}
-
-const str = (v: FormDataEntryValue | null): string => (typeof v === 'string' ? v : '');
 const optStr = (v: FormDataEntryValue | null): string | undefined => {
   const s = str(v).trim();
   return s.length > 0 ? s : undefined;
@@ -1009,8 +977,14 @@ export async function syncOpenRouterModelsAction(
 
 // ── Team (Spec §10.2: invitation-only access) ─────────────────────────────────
 
+function hoursLeft(expiresAt: Date): string {
+  const h = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 3_600_000));
+  return h >= 48 ? `${Math.round(h / 24)} days` : `${h} hour${h === 1 ? '' : 's'}`;
+}
+
+/** Create the invitation; email the join link when SMTP exists, always show it. */
 export async function inviteUserAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  let invited: { email: string };
+  let invited: Awaited<ReturnType<typeof inviteUser>>;
   try {
     const actor = await requireActor();
     invited = await inviteUser(prisma, actor, {
@@ -1021,23 +995,85 @@ export async function inviteUserAction(_prev: FormState, formData: FormData): Pr
   } catch (e) {
     return toState('user.invite', e);
   }
-  // The row exists; sending the link is best-effort. Our signIn callback admits
-  // INVITED rows, so this is the same path the invitee would take from /login.
+  const joinUrl = absoluteUrl(`/join?code=${invited.code}`);
+  const validity = hoursLeft(invited.expiresAt);
+  // Delivery is best-effort: the row and the code exist either way.
+  const resolved = await resolveEmailConfig(prisma);
+  if (resolved) {
+    try {
+      await sendEmailWith(resolved.config, {
+        to: [invited.email],
+        ...inviteEmail({ joinUrl, host: appHost(), role: invited.role }),
+      });
+      return {
+        ok: true,
+        message: `Invitation emailed to ${invited.email} (valid ${validity}). You can also hand them this link:`,
+        detail: joinUrl,
+      };
+    } catch (e) {
+      logger.warn(
+        { errorType: e instanceof Error ? e.name : typeof e },
+        'invitation created but the email could not be sent',
+      );
+    }
+  }
+  return {
+    ok: true,
+    message: `Invitation created. Send ${invited.email} this link (valid ${validity}, works once):`,
+    detail: joinUrl,
+  };
+}
+
+export async function reissueInviteCodeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   try {
-    await signIn('nodemailer', { email: invited.email, redirect: false, redirectTo: '/' });
+    const actor = await requireActor();
+    const issued = await issueInviteCode(prisma, actor, str(formData.get('userId')));
     return {
       ok: true,
-      message: `Invitation created and a sign-in link emailed to ${invited.email}.`,
+      message: `New invite link for ${issued.email} (valid ${hoursLeft(issued.expiresAt)}); the old one no longer works:`,
+      detail: absoluteUrl(`/join?code=${issued.code}`),
     };
   } catch (e) {
-    logger.warn(
-      { errorType: e instanceof Error ? e.name : typeof e },
-      'invitation created but the sign-in email could not be sent',
-    );
+    return toState('user.invite.reissue', e);
+  }
+}
+
+export async function issuePasswordResetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  try {
+    const actor = await requireActor();
+    const issued = await issuePasswordResetCode(prisma, actor, str(formData.get('userId')));
     return {
       ok: true,
-      message: `Invitation created. Email could not be sent; ask ${invited.email} to request a sign-in link at /login.`,
+      message: `Reset link for ${issued.email} (valid ${hoursLeft(issued.expiresAt)}, works once):`,
+      detail: absoluteUrl(`/reset?code=${issued.code}`),
     };
+  } catch (e) {
+    return toState('user.passwordReset.issue', e);
+  }
+}
+
+export async function changePasswordAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  if (str(formData.get('newPassword')) !== str(formData.get('confirmPassword'))) {
+    return { ok: false, error: 'The two new passwords do not match.' };
+  }
+  try {
+    const actor = await requireActor();
+    await changeOwnPassword(prisma, actor, {
+      currentPassword: str(formData.get('currentPassword')),
+      newPassword: str(formData.get('newPassword')),
+    });
+    return { ok: true, message: 'Password changed.' };
+  } catch (e) {
+    return toState('user.password.change', e);
   }
 }
 

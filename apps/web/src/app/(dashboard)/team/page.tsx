@@ -6,6 +6,8 @@ import { InlineActionForm } from '@/components/inline-action-form';
 import {
   deleteInvitationAction,
   inviteUserAction,
+  issuePasswordResetAction,
+  reissueInviteCodeAction,
   setUserStatusAction,
   updateUserRoleAction,
 } from '@/server/actions';
@@ -44,14 +46,14 @@ export default async function TeamPage() {
     <>
       <PageHeader
         title="Team"
-        description="Who can sign in and what they may do. Access is by invitation: nobody can sign up on their own. ADMIN manages everything, EDITOR reviews and approves articles, VIEWER reads."
+        description="Who can sign in and what they may do. Access is by invitation: nobody can sign up on their own. ADMIN manages everything, EDITOR reviews and approves articles, VIEWER reads. A reset link lets someone who forgot their password choose a new one."
       />
       <div className="grid gap-6">
         <Card
           title="Invite someone"
-          description="Creates the account and emails a sign-in link. The invitation becomes active the first time they sign in."
+          description="Creates the account and an invite link. If email delivery is configured the link is emailed; either way it is shown here so you can send it yourself. The account becomes active when they open it and choose a password."
         >
-          <ActionForm action={inviteUserAction} submitLabel="Send invitation">
+          <ActionForm action={inviteUserAction} submitLabel="Create invitation">
             <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
               <Field label="Email" name="email">
                 <input
@@ -128,10 +130,26 @@ export default async function TeamPage() {
                       <td className="py-3">
                         <div className="flex flex-wrap gap-2">
                           {member.status === 'INVITED' ? (
+                            <>
+                              <InlineActionForm
+                                action={reissueInviteCodeAction}
+                                submitLabel="New invite link"
+                              >
+                                <input type="hidden" name="userId" value={member.id} />
+                              </InlineActionForm>
+                              <InlineActionForm
+                                action={deleteInvitationAction}
+                                submitLabel="Delete invitation"
+                                submitVariant="danger"
+                              >
+                                <input type="hidden" name="userId" value={member.id} />
+                              </InlineActionForm>
+                            </>
+                          ) : null}
+                          {member.status === 'ACTIVE' ? (
                             <InlineActionForm
-                              action={deleteInvitationAction}
-                              submitLabel="Delete invitation"
-                              submitVariant="danger"
+                              action={issuePasswordResetAction}
+                              submitLabel="Reset link"
                             >
                               <input type="hidden" name="userId" value={member.id} />
                             </InlineActionForm>

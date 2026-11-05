@@ -15,9 +15,13 @@ pnpm db:migrate
 pnpm dev                        # web on :4000, worker on :4100
 ```
 
-Mailpit at http://localhost:8026 shows the magic-link email so you can sign in
-without a real mail server. The first user to sign in becomes ADMIN and can
-invite others from the Team page.
+Open http://localhost:4000: an empty database lands on `/setup`, where you
+create the administrator (email + password). Invite other test accounts from
+the Team page; Mailpit at http://localhost:8026 shows the emails Scribe sends
+(invitations, reset links, the review digest) once Settings → Email points at
+`smtp://localhost:2025`. To rehearse the first-run flow without touching your
+data, put `DATABASE_URL` and `DIRECT_URL` for an empty database in `.env.fresh`
+(gitignored), migrate it, and start the `web-fresh` launch configuration.
 
 ## Before you open a pull request
 

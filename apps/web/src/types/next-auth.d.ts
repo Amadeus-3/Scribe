@@ -22,9 +22,3 @@ declare module 'next-auth/jwt' {
     accessCheckedAt?: number;
   }
 }
-
-declare module '@auth/core/adapters' {
-  interface AdapterUser {
-    role: Role;
-  }
-}
