@@ -1,20 +1,13 @@
+import { AuthError } from 'next-auth';
+import { redirect } from 'next/navigation';
 import { signIn } from '@/auth';
+import { loginErrorKey, loginErrorText } from '@/lib/login-error';
 import { countUsers, prisma } from '@scribe/core';
 
 export const metadata = { title: 'Sign in — Scribe' };
 
 // Reads the user count, so it cannot be prerendered at build time.
 export const dynamic = 'force-dynamic';
-
-// Auth.js redirects here with ?error=... (pages.error). Keep the copy generic:
-// it must not reveal whether an address exists.
-const ERROR_COPY: Record<string, string> = {
-  AccessDenied: 'That email is not invited. Ask an admin to add you from the Team page.',
-  EmailSignin:
-    'The sign-in email could not be sent. Email delivery is not configured or failed; an admin can fix it under Settings > Email.',
-  Verification: 'That link has expired or was already used. Request a new one.',
-  Configuration: 'The server is misconfigured. Check the web container logs.',
-};
 
 export default async function LoginPage({
   searchParams,
@@ -25,13 +18,21 @@ export default async function LoginPage({
   const isFreshInstance = (await countUsers(prisma)) === 0;
   const params = await searchParams;
   const errorKey = typeof params.error === 'string' ? params.error : undefined;
-  const errorText = errorKey ? (ERROR_COPY[errorKey] ?? 'Sign-in failed. Please try again.') : null;
+  const errorText = loginErrorText(errorKey, { isFreshInstance });
 
   async function sendMagicLink(formData: FormData) {
     'use server';
     const email = String(formData.get('email') ?? '').trim();
     if (!email) return;
-    await signIn('nodemailer', { email, redirectTo: '/' });
+    try {
+      await signIn('nodemailer', { email, redirectTo: '/' });
+    } catch (error) {
+      // A refused or failed sign-in arrives as an AuthError; show it on this
+      // page. Anything else, including Next's own redirect signal on success,
+      // must propagate.
+      if (error instanceof AuthError) redirect(`/login?error=${loginErrorKey(error.type)}`);
+      throw error;
+    }
   }
 
   return (
