@@ -37,3 +37,6 @@ Thumbs.db
 
 # Sentry
 .sentryclirc
+
+# Private working notes (progress log, plans) — never committed
+.notes/
