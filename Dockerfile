@@ -5,7 +5,7 @@
 # the command per service. Production-style: deps are installed fresh for Linux,
 # so host (macOS) binaries never leak in.
 
-FROM node:22-slim AS base
+FROM node:25-slim AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
